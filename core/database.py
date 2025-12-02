@@ -12,29 +12,80 @@ class BotDatabase:
         self._init_db()
 
     def _get_conn(self):
+        """Crea una connexió nova (necessari per multithreading)."""
         return sqlite3.connect(DB_PATH, check_same_thread=False)
 
     def _init_db(self):
+        """Crea les taules si no existeixen."""
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute('''CREATE TABLE IF NOT EXISTS market_data (symbol TEXT PRIMARY KEY, price REAL, candles_json TEXT, updated_at REAL)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS grid_status (symbol TEXT PRIMARY KEY, open_orders_json TEXT, grid_levels_json TEXT, stats_json TEXT, updated_at REAL)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS trade_history (id TEXT PRIMARY KEY, symbol TEXT, side TEXT, price REAL, amount REAL, cost REAL, timestamp REAL)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS profit_history (trade_id TEXT PRIMARY KEY, symbol TEXT, profit REAL, timestamp REAL)''')
+        
+        # Taula 1: Dades de Mercat
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS market_data (
+                symbol TEXT PRIMARY KEY,
+                price REAL,
+                candles_json TEXT,
+                updated_at REAL
+            )
+        ''')
+
+        # Taula 2: Estat del Grid
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS grid_status (
+                symbol TEXT PRIMARY KEY,
+                open_orders_json TEXT,
+                grid_levels_json TEXT,
+                updated_at REAL
+            )
+        ''')
+
+        # Taula 3: Històric de Trades
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trade_history (
+                id TEXT PRIMARY KEY,
+                symbol TEXT,
+                side TEXT,
+                price REAL,
+                amount REAL,
+                cost REAL,
+                timestamp REAL
+            )
+        ''')
+
+        # Taula 4: Metadades del sistema
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bot_info (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        ''')
+        
+        cursor.execute("SELECT value FROM bot_info WHERE key='first_run'")
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', str(time.time())))
+
         conn.commit()
         conn.close()
 
     def update_market_snapshot(self, symbol, price, candles):
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute('INSERT OR REPLACE INTO market_data (symbol, price, candles_json, updated_at) VALUES (?, ?, ?, ?)', (symbol, price, json.dumps(candles), time.time()))
+        cursor.execute('''
+            INSERT OR REPLACE INTO market_data (symbol, price, candles_json, updated_at)
+            VALUES (?, ?, ?, ?)
+        ''', (symbol, price, json.dumps(candles), time.time()))
         conn.commit()
         conn.close()
 
-    def update_grid_status(self, symbol, orders, levels, stats):
+    def update_grid_status(self, symbol, orders, levels):
+        """Nota: Hem tret l'argument 'stats' perquè ja no el guardem aquí."""
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute('INSERT OR REPLACE INTO grid_status (symbol, open_orders_json, grid_levels_json, stats_json, updated_at) VALUES (?, ?, ?, ?, ?)', (symbol, json.dumps(orders), json.dumps(levels), json.dumps(stats), time.time()))
+        cursor.execute('''
+            INSERT OR REPLACE INTO grid_status (symbol, open_orders_json, grid_levels_json, updated_at)
+            VALUES (?, ?, ?, ?)
+        ''', (symbol, json.dumps(orders), json.dumps(levels), time.time()))
         conn.commit()
         conn.close()
 
@@ -44,57 +95,32 @@ class BotDatabase:
         cursor = conn.cursor()
         for t in trades:
             try:
-                cursor.execute('''INSERT OR IGNORE INTO trade_history (id, symbol, side, price, amount, cost, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)''', (t['id'], t['symbol'], t['side'], t['price'], t['amount'], t['cost'], t['timestamp']))
+                cursor.execute('''
+                    INSERT OR IGNORE INTO trade_history (id, symbol, side, price, amount, cost, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (t['id'], t['symbol'], t['side'], t['price'], t['amount'], t['cost'], t['timestamp']))
             except: pass
         conn.commit()
         conn.close()
 
-    def register_profit(self, trade_id, symbol, profit, timestamp):
-        conn = self._get_conn()
-        cursor = conn.cursor()
-        try:
-            cursor.execute('INSERT OR IGNORE INTO profit_history (trade_id, symbol, profit, timestamp) VALUES (?, ?, ?, ?)', (trade_id, symbol, profit, timestamp))
-            conn.commit()
-        except: pass
-        finally: conn.close()
-
-    def get_total_stats(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
-        cursor.execute("SELECT SUM(profit) FROM profit_history")
-        total_profit = cursor.fetchone()[0] or 0.0
-        cursor.execute("SELECT COUNT(*) FROM trade_history")
-        total_trades = cursor.fetchone()[0] or 0
-        cursor.execute("SELECT symbol, SUM(profit) as p FROM profit_history GROUP BY symbol ORDER BY p DESC LIMIT 1")
-        row = cursor.fetchone()
-        best_coin = row[0] if row else "Cap"
-        conn.close()
-        return {"total_profit": total_profit, "total_trades": total_trades, "best_coin": best_coin}
-
-    # --- IMPRESCINDIBLE PER AL GRÀFIC ---
-    def get_trades_breakdown(self):
-        """Retorna recompte d'operacions per moneda."""
-        try:
-            conn = self._get_conn()
-            cursor = conn.cursor()
-            cursor.execute("SELECT symbol, COUNT(*) as count FROM trade_history GROUP BY symbol")
-            rows = cursor.fetchall()
-            conn.close()
-            return [{"name": row[0], "value": row[1]} for row in rows]
-        except:
-            return []
+    # --- MÈTODES DE LECTURA ---
 
     def get_pair_data(self, symbol):
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+
         cursor.execute("SELECT * FROM market_data WHERE symbol=?", (symbol,))
         market = cursor.fetchone()
+
         cursor.execute("SELECT * FROM grid_status WHERE symbol=?", (symbol,))
         grid = cursor.fetchone()
+
         cursor.execute("SELECT * FROM trade_history WHERE symbol=? ORDER BY timestamp DESC LIMIT 50", (symbol,))
         trades = cursor.fetchall()
+
         conn.close()
+
         return {
             "price": market['price'] if market else 0.0,
             "candles": json.loads(market['candles_json']) if market and market['candles_json'] else [],
@@ -110,3 +136,64 @@ class BotDatabase:
         rows = cursor.fetchall()
         conn.close()
         return {r[0]: r[1] for r in rows}
+
+    def get_first_run_timestamp(self):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM bot_info WHERE key='first_run'")
+        row = cursor.fetchone()
+        conn.close()
+        if row: return float(row[0])
+        return time.time()
+
+    def get_stats(self, from_timestamp=0):
+        """
+        Calcula estadístiques filtrant per data.
+        Si from_timestamp == 0 -> Global.
+        Si from_timestamp > 0 -> Sessió actual.
+        """
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        
+        # Filtrem per temps
+        query = "SELECT symbol, side, cost FROM trade_history WHERE timestamp >= ?"
+        cursor.execute(query, (from_timestamp * 1000,)) # Binance usa milisegons
+        rows = cursor.fetchall()
+        
+        conn.close()
+
+        total_trades = len(rows)
+        pnl = 0.0
+        pnl_per_coin = {}
+        trades_per_coin = {} 
+
+        for symbol, side, cost in rows:
+            # 1. PnL
+            val = cost if side == 'sell' else -cost
+            pnl += val
+            
+            if symbol not in pnl_per_coin: pnl_per_coin[symbol] = 0.0
+            pnl_per_coin[symbol] += val
+
+            # 2. Comptador Trades
+            if symbol not in trades_per_coin: trades_per_coin[symbol] = 0
+            trades_per_coin[symbol] += 1
+
+        # Millor moneda
+        best_coin = "-"
+        highest_pnl = -99999999.0
+        for sym, val in pnl_per_coin.items():
+            if val > highest_pnl:
+                highest_pnl = val
+                best_coin = sym
+        if highest_pnl <= 0: best_coin = "-"
+
+        # Format gràfic ECharts
+        trades_distribution = [{"name": k, "value": v} for k, v in trades_per_coin.items()]
+
+        return {
+            "trades": total_trades,
+            "profit": pnl,
+            "best_coin": best_coin,
+            "trades_distribution": trades_distribution
+        }
