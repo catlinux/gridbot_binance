@@ -5,50 +5,59 @@ from utils.logger import log
 import time
 import math
 import threading
-import copy # Necessari per comparar diccionaris
+import copy
 
 class GridBot:
     def __init__(self):
         self.connector = BinanceConnector()
         self.db = BotDatabase()
         self.config = self.connector.config
-        
-        # Inicialitzem mapa de parells
         self.pairs_map = {}
         self._refresh_pairs_map()
-        
         self.levels = {} 
         self.is_running = False
         self.reserved_inventory = {} 
-        
-        self.session_stats = {pair: {'trades': 0, 'profit': 0.0} for pair in self.active_pairs}
         self.global_start_time = time.time()
 
     def _refresh_pairs_map(self):
-        """Llegeix la config i crea un diccionari {Simbol: Config} per accés ràpid."""
         self.pairs_map = {p['symbol']: p for p in self.config['pairs'] if p['enabled']}
         self.active_pairs = list(self.pairs_map.keys())
 
-    # ... (Mètodes de càlcul i dades iguals que abans - Data Collector, Params, etc.) ...
-    
     def _data_collector_loop(self):
-        log.info("Iniciant col·lector de dades en segon pla...")
+        """Recull dades i calcula beneficis en segon pla."""
+        log.info("Iniciant col·lector de dades i beneficis...")
         while self.is_running:
-            # Utilitzem una còpia de la llista per si canvia durant la iteració (reload)
             current_pairs = list(self.active_pairs)
             for symbol in current_pairs:
                 try:
+                    # 1. Dades de Mercat
                     price = self.connector.fetch_current_price(symbol)
                     candles = self.connector.fetch_candles(symbol, limit=100)
                     self.db.update_market_snapshot(symbol, price, candles)
 
+                    # 2. Estat
                     open_orders = self.connector.fetch_open_orders(symbol) or []
                     grid_levels = self.levels.get(symbol, [])
-                    stats = self.session_stats.get(symbol, {})
-                    self.db.update_grid_status(symbol, open_orders, grid_levels, stats)
+                    self.db.update_grid_status(symbol, open_orders, grid_levels, {})
 
-                    trades = self.connector.fetch_my_trades(symbol, limit=10)
-                    self.db.save_trades(trades)
+                    # 3. Trades i Càlcul de Beneficis (EL NOU MOTOR)
+                    trades = self.connector.fetch_my_trades(symbol, limit=20)
+                    if trades:
+                        self.db.save_trades(trades)
+                        
+                        # Calculem beneficis de les VENDES
+                        params = self._get_params(symbol)
+                        spread_percent = params['grid_spread'] / 100
+                        # Profit aprox per venda = TotalVenda * (Spread / (1 + Spread))
+                        profit_ratio = spread_percent / (1 + spread_percent)
+
+                        for t in trades:
+                            if t['side'] == 'sell':
+                                # Calculem benefici estimat d'aquesta operació
+                                profit = t['cost'] * profit_ratio
+                                # Intentem guardar-lo (la DB evitarà duplicats per ID)
+                                self.db.register_profit(t['id'], symbol, profit, t['timestamp'])
+                    
                 except Exception: pass
                 time.sleep(1)
             time.sleep(5)
@@ -69,7 +78,6 @@ class GridBot:
             levels.append(current_price * (1 - (spread_percent * i))) 
             levels.append(current_price * (1 + (spread_percent * i))) 
         levels.sort()
-        
         clean_levels = []
         for p in levels:
             try:
@@ -121,17 +129,12 @@ class GridBot:
                     break
             if exists: continue 
 
-            if self.is_running and symbol in self.session_stats:
-                 pass 
-
             amount = self._get_amount_for_level(symbol, level_price)
             if amount == 0: continue
 
             if target_side == 'buy':
                 balance = self.connector.get_asset_balance(quote_asset)
-                if balance < amount * level_price:
-                    # log.error(f"[{symbol}] Fons insuficients {quote_asset}.")
-                    continue
+                if balance < amount * level_price: continue
             else: 
                 balance = self.connector.get_asset_balance(base_asset)
                 reserved = self.reserved_inventory.get(base_asset, 0.0)
@@ -143,83 +146,48 @@ class GridBot:
             log.warning(f"[{symbol}] Creant ordre {target_side} @ {level_price}")
             self.connector.place_order(symbol, target_side, amount, level_price)
 
-    # --- LÒGICA DE SMART RELOAD ---
     def _handle_smart_reload(self):
-        """
-        Compara la configuració vella amb la nova i només reinicia el necessari.
-        """
         log.warning("🔄 CONFIGURACIÓ ACTUALITZADA: Analitzant canvis...")
-        
-        # 1. Guardem l'estat vell
         old_map = copy.deepcopy(self.pairs_map)
-        
-        # 2. Actualitzem a la nova config
         self.config = self.connector.config
-        self._refresh_pairs_map() # Actualitza self.pairs_map amb el nou
+        self._refresh_pairs_map()
         
-        # 3. Detectar canvis
         new_symbols = set(self.pairs_map.keys())
         old_symbols = set(old_map.keys())
         
-        # A. Monedes que s'han tret (Disabled)
         removed = old_symbols - new_symbols
         for symbol in removed:
-            log.info(f"⛔ Aturant {symbol} (Deshabilitat). Cancel·lant ordres...")
+            log.info(f"⛔ Aturant {symbol}. Cancel·lant ordres...")
             self.connector.cancel_all_orders(symbol)
             if symbol in self.levels: del self.levels[symbol]
-            if symbol in self.reserved_inventory: 
-                del self.reserved_inventory[symbol.split('/')[0]]
+            if symbol in self.reserved_inventory: del self.reserved_inventory[symbol.split('/')[0]]
 
-        # B. Monedes Noves (Enabled)
         added = new_symbols - old_symbols
-        for symbol in added:
-            log.success(f"✨ Activant {symbol} (Nou).")
-            # Inicialitzar stats
-            if symbol not in self.session_stats:
-                self.session_stats[symbol] = {'trades': 0, 'profit': 0.0}
-            # No cal fer res més, el bucle principal detectarà que no té línies i les crearà
+        for symbol in added: log.success(f"✨ Activant {symbol}.")
 
-        # C. Monedes que continuen (Check de Canvis)
         kept = old_symbols & new_symbols
         for symbol in kept:
             old_strat = old_map[symbol].get('strategy')
             new_strat = self.pairs_map[symbol].get('strategy')
-            
-            # Si l'estratègia ha canviat, reiniciem NOMÉS aquesta moneda
             if old_strat != new_strat:
-                log.warning(f"♻️ Canvi detectat a {symbol}. Reiniciant grid...")
-                
-                # 1. Protegir inventari
+                log.warning(f"♻️ Canvi a {symbol}. Reiniciant grid...")
                 base_asset = symbol.split('/')[0]
                 total_holding = self.connector.get_total_balance(base_asset)
                 if total_holding > 0:
                     self.reserved_inventory[base_asset] = total_holding
                     log.info(f"🔒 {symbol}: Reservats {total_holding} {base_asset}.")
-                
-                # 2. Cancel·lar i netejar nivells vells
                 self.connector.cancel_all_orders(symbol)
                 if symbol in self.levels: del self.levels[symbol]
-            else:
-                # Si no ha canviat, no fem res (SILENCI)
-                # log.info(f"Sense canvis a {symbol}. Continuant...")
-                pass
-
-        log.info("✅ Recàrrega intel·ligent completada.")
 
     def start(self):
         log.info("--- INICIANT GRIDBOT PROFESSIONAL ---")
         self.connector.validate_connection()
-        
         log.warning("Netejant ordres antigues inicials...")
-        for symbol in self.active_pairs:
-            self.connector.cancel_all_orders(symbol)
-            
+        for symbol in self.active_pairs: self.connector.cancel_all_orders(symbol)
         log.info("Esperant 5 segons post-neteja...")
         time.sleep(5)
-
         self.is_running = True
         
-        # Fil de dades
         data_thread = threading.Thread(target=self._data_collector_loop, daemon=True)
         data_thread.start()
 
@@ -231,13 +199,8 @@ class GridBot:
     def _monitoring_loop(self):
         delay = self.config['system']['cycle_delay']
         while self.is_running:
-            
-            # Si hi ha canvis al fitxer, executem la lògica Smart
-            if self.connector.check_and_reload_config():
-                self._handle_smart_reload()
-                
-            for symbol in self.active_pairs:
-                self._ensure_grid_consistency(symbol)
+            if self.connector.check_and_reload_config(): self._handle_smart_reload()
+            for symbol in self.active_pairs: self._ensure_grid_consistency(symbol)
             time.sleep(delay)
 
     def _shutdown(self):

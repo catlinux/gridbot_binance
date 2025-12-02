@@ -20,7 +20,7 @@
         .bg-buy { background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
         .bg-sell { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
         .chart-container { height: 450px; width: 100%; }
-        .chart-pie { height: 300px; width: 100%; }
+        .chart-pie { height: 380px; width: 100%; }
         .stat-val { font-size: 1.5rem; font-weight: 800; display: block; }
         .stat-lbl { font-size: 0.75rem; text-transform: uppercase; color: #6b7280; font-weight: 600; }
         .border-l-success { border-left: 4px solid #10b981; }
@@ -29,29 +29,9 @@
         .border-l-info { border-left: 4px solid #6366f1; }
         .tf-btn { font-size: 0.75rem; padding: 2px 8px; margin-left: 2px; }
         .tf-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
-        
-        /* Estils Formularis */
-        .form-label { font-weight: 600; font-size: 0.85rem; color: #4b5563; }
-        .coin-card { transition: all 0.2s; }
-        .coin-card:hover { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-color: #cbd5e1; }
-        .coin-disabled { opacity: 0.6; background-color: #f9fafb; }
-        .input-group-text { font-size: 0.85rem; background-color: #f3f4f6; }
-        
-        #config-editor {
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 14px;
-            background-color: #1e1e1e;
-            color: #d4d4d4;
-            border: 1px solid #333;
-            border-radius: 6px;
-            padding: 15px;
-            width: 100%;
-            height: 600px;
-            resize: vertical;
-            white-space: pre;
-            tab-size: 2;
-        }
+        #config-editor { font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #333; border-radius: 6px; padding: 15px; width: 100%; height: 600px; resize: vertical; white-space: pre; tab-size: 2; }
         #config-msg { display: none; margin-top: 10px; }
+        #error-overlay { display: none; position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
     </style>
 </head>
 <body>
@@ -63,66 +43,56 @@
             </a>
             <div class="text-white d-flex align-items-center">
                 <span id="status-badge" class="badge bg-secondary me-3">Connectant...</span>
-                <span id="total-balance" class="fw-bold fs-5">-- USDC</span>
+                <span id="total-balance" class="fw-bold fs-5">--</span>
             </div>
         </div>
     </nav>
 
+    <div id="error-overlay" class="alert alert-danger shadow-lg">
+        <i class="fa-solid fa-triangle-exclamation me-2"></i> <span id="error-msg">Error de connexió</span>
+    </div>
+
     <div class="container-fluid px-4">
         <ul class="nav nav-tabs" id="mainTabs" role="tablist">
-            <li class="nav-item">
-                <button class="nav-link active" id="tab-home" data-bs-toggle="tab" data-bs-target="#content-home" type="button" onclick="setMode('home')">
-                    <i class="fa-solid fa-house me-2"></i> General
-                </button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link" id="tab-config" data-bs-toggle="tab" data-bs-target="#content-config" type="button" onclick="loadConfigForm()">
-                    <i class="fa-solid fa-sliders me-2"></i> Configuració
-                </button>
-            </li>
+            <li class="nav-item"><button class="nav-link active" id="tab-home" data-bs-toggle="tab" data-bs-target="#content-home" type="button" onclick="setMode('home')">🏠 General</button></li>
+            <li class="nav-item"><button class="nav-link" id="tab-config" data-bs-toggle="tab" data-bs-target="#content-config" type="button" onclick="loadConfigForm()"><i class="fa-solid fa-sliders me-2"></i> Configuració</button></li>
         </ul>
 
         <div class="tab-content" id="mainTabsContent">
             
             <div class="tab-pane fade show active" id="content-home" role="tabpanel">
                 <div class="row mb-3">
-                    <div class="col-md-3"><div class="card p-3 border-l-success"><span class="stat-lbl">Benefici Sessió</span><span id="dash-profit" class="stat-val text-success">-- $</span></div></div>
-                    <div class="col-md-3"><div class="card p-3 border-l-warning"><span class="stat-lbl">Operacions Totals</span><span id="dash-trades" class="stat-val">--</span></div></div>
-                    <div class="col-md-3"><div class="card p-3 border-l-primary"><span class="stat-lbl">Millor Moneda</span><span id="dash-top-coin" class="stat-val">--</span></div></div>
-                    <div class="col-md-3"><div class="card p-3 border-l-info"><span class="stat-lbl">Temps Actiu</span><span id="dash-uptime" class="stat-val text-secondary">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-primary"><span class="stat-lbl">Benefici Total</span><span id="glob-profit" class="stat-val text-primary">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-primary"><span class="stat-lbl">Operacions Totals</span><span id="glob-trades" class="stat-val text-dark">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-primary"><span class="stat-lbl">Millor Moneda</span><span id="glob-coin" class="stat-val text-dark">--</span></div></div>
                 </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3"><div class="card p-3 border-l-success"><span class="stat-lbl">Benefici Sessió</span><span id="sess-profit" class="stat-val text-success">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-warning"><span class="stat-lbl">Operacions</span><span id="sess-trades" class="stat-val text-dark">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-warning"><span class="stat-lbl">Millor Moneda</span><span id="sess-coin" class="stat-val text-dark">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-info"><span class="stat-lbl">Temps Actiu</span><span id="sess-uptime" class="stat-val text-secondary fs-4">--</span></div></div>
+                </div>
+
                 <div class="row">
-                    <div class="col-lg-6"><div class="card h-100"><div class="card-header">Distribució de la Cartera</div><div class="card-body"><div id="pieChart" class="chart-pie"></div></div></div></div>
-                    <div class="col-lg-6"><div class="card h-100"><div class="card-header">Estratègies Actives</div><div class="card-body p-0"><ul id="config-list" class="list-group list-group-flush"></ul></div></div></div>
+                    <div class="col-lg-4"><div class="card h-100"><div class="card-header">Distribució Cartera ($)</div><div class="card-body"><div id="portfolioChart" class="chart-pie"></div></div></div></div>
+                    <div class="col-lg-4"><div class="card h-100"><div class="card-header">Trades Sessió</div><div class="card-body"><div id="sessionTradesChart" class="chart-pie"></div></div></div></div>
+                    <div class="col-lg-4"><div class="card h-100"><div class="card-header">Trades Global</div><div class="card-body"><div id="globalTradesChart" class="chart-pie"></div></div></div></div>
+                </div>
+                
+                <div class="row mt-4">
+                    <div class="col-12"><div class="card"><div class="card-header">Estratègies Actives</div><div class="card-body p-0"><ul id="config-list" class="list-group list-group-flush"></ul></div></div></div>
                 </div>
             </div>
 
             <div class="tab-pane fade" id="content-config" role="tabpanel">
                 <div id="config-alert" class="alert alert-info" style="display:none"></div>
                 <div class="card mb-4 border-primary">
-                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                        <span><i class="fa-solid fa-microchip me-2"></i> Sistema Global</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="row align-items-center">
-                            <div class="col-md-4">
-                                <label class="form-label">Cicle d'Actualització (Segons)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text"><i class="fa-regular fa-clock"></i></span>
-                                    <input type="number" class="form-control" id="sys-cycle" min="1" max="60">
-                                </div>
-                                <div class="form-text">Temps d'espera entre revisions del mercat.</div>
-                            </div>
-                            <div class="col-md-8 text-end">
-                                <button class="btn btn-success btn-lg" onclick="saveConfigForm()"><i class="fa-solid fa-floppy-disk me-2"></i> GUARDAR CANVIS</button>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"><span><i class="fa-solid fa-microchip me-2"></i> Sistema Global</span></div>
+                    <div class="card-body"><div class="row align-items-center"><div class="col-md-4"><label class="form-label">Cicle (Segons)</label><div class="input-group"><span class="input-group-text"><i class="fa-regular fa-clock"></i></span><input type="number" class="form-control" id="sys-cycle" min="1" max="60"></div></div><div class="col-md-8 text-end"><button class="btn btn-success btn-lg" onclick="saveConfigForm()"><i class="fa-solid fa-floppy-disk me-2"></i> GUARDAR CANVIS</button></div></div></div>
                 </div>
                 <h5 class="mb-3 text-muted border-bottom pb-2">Configuració per Moneda</h5>
-                <div class="row" id="coins-config-container">
-                    <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
-                </div>
+                <div class="row" id="coins-config-container"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
             </div>
 
         </div>
@@ -136,20 +106,130 @@
         let currentTimeframe = '15m';
         let currentConfigObj = null; 
 
+        // --- FORMATADOR MANUAL I ROBUST (Català 2 decimals) ---
+        function formatMoney(amount) {
+            if (amount === undefined || amount === null || isNaN(amount)) return '0,00 $';
+            let num = Number(amount);
+            // Fixem a 2 decimals, canviem punt per coma, afegim $
+            return num.toFixed(2).replace('.', ',') + ' $';
+        }
+
         function setMode(mode) {
             currentMode = mode;
             if (mode === 'home') loadHome();
             else if (mode !== 'config') loadSymbol(mode);
-            
-            if (mode !== 'home' && mode !== 'config') {
-                setTimeout(() => {
-                    const safe = mode.replace('/', '_');
-                    if (charts[safe]) charts[safe].resize();
-                }, 200);
+            if (mode !== 'home' && mode !== 'config') { setTimeout(() => { const safe = mode.replace('/', '_'); if (charts[safe]) charts[safe].resize(); }, 200); }
+        }
+
+        async function loadHome() {
+            try {
+                const res = await fetch('/api/status');
+                if (!res.ok) throw new Error("Error API");
+                const data = await res.json();
+                
+                // Si la connexió va bé, amaguem error
+                document.getElementById('error-overlay').style.display = 'none';
+
+                document.getElementById('status-badge').innerText = data.status === 'Running' ? 'OPERATIU' : 'ATURAT';
+                document.getElementById('status-badge').className = data.status === 'Running' ? 'badge bg-success' : 'badge bg-danger';
+                document.getElementById('total-balance').innerText = formatMoney(data.total_usdc_value);
+                
+                // Utilitzem l'operador ?. per evitar errors si falta algun camp
+                document.getElementById('glob-profit').innerText = formatMoney(data.global?.profit);
+                document.getElementById('glob-trades').innerText = data.global?.trades || 0;
+                document.getElementById('glob-coin').innerText = data.global?.best_coin || '-';
+
+                document.getElementById('sess-profit').innerText = formatMoney(data.session?.profit);
+                document.getElementById('sess-trades').innerText = data.session?.trades || 0;
+                document.getElementById('sess-coin').innerText = data.session?.best_coin || '-';
+                document.getElementById('sess-uptime').innerText = data.uptime;
+
+                // Gràfics
+                renderPieChart('portfolioChart', 'Cartera', data.portfolio_distribution);
+                renderPieChart('sessionTradesChart', 'Trades Sessió', data.session_trades_distribution);
+                renderPieChart('globalTradesChart', 'Trades Global', data.global_trades_distribution);
+
+                document.getElementById('config-list').innerHTML = data.active_pairs.map(p => `<li class="list-group-item d-flex justify-content-between"><span>${p}</span> <span class="badge bg-success bg-opacity-25 text-success">Actiu</span></li>`).join('');
+                
+            } catch(e) { 
+                console.error("Error home:", e); 
+                document.getElementById('error-msg').innerText = "Error de connexió amb el servidor";
+                document.getElementById('error-overlay').style.display = 'block';
             }
         }
 
-        // --- CONFIG ---
+        // --- AQUESTA ÉS L'ÚNICA FUNCIÓ MODIFICADA ---
+        function renderPieChart(domId, name, data) {
+            const dom = document.getElementById(domId);
+            if (!dom) return;
+            let chart = echarts.getInstanceByDom(dom);
+            if (!chart) chart = echarts.init(dom);
+            
+            if (!data || data.length === 0) {
+                chart.setOption({ 
+                    title: { text: 'Sense dades', left: 'center', top: 'center', textStyle: { color: '#ccc' } },
+                    series: [] 
+                }, true);
+                return;
+            }
+
+            const option = {
+                tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                // CANVI LLEGENDA: Vertical a l'esquerra
+                legend: { 
+                    orient: 'vertical',
+                    left: 'left',
+                    top: 'middle',
+                    type: 'scroll'
+                },
+                series: [{
+                    name: name, type: 'pie', radius: ['50%', '80%'],
+                    // CANVI POSICIÓ: Donut a la dreta
+                    center: ['60%', '50%'], 
+                    itemStyle: { borderRadius: 5, borderColor: '#fff', borderWidth: 2 },
+                    label: { show: false }, data: data
+                }]
+            };
+            chart.setOption(option);
+        }
+        // -------------------------------------------
+
+        async function loadSymbol(symbol) {
+            const safe = symbol.replace('/', '_');
+            try {
+                const res = await fetch(`/api/details/${symbol}?timeframe=${currentTimeframe}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                
+                document.getElementById(`price-${safe}`).innerText = formatMoney(data.price);
+                renderCandleChart(safe, data.chart_data, data.grid_lines);
+                
+                const buys = data.open_orders.filter(o => o.side === 'buy').sort((a,b) => b.price - a.price);
+                const sells = data.open_orders.filter(o => o.side === 'sell').sort((a,b) => a.price - b.price);
+                document.getElementById(`count-buy-${safe}`).innerText = buys.length;
+                document.getElementById(`count-sell-${safe}`).innerText = sells.length;
+                document.getElementById(`next-buy-${safe}`).innerText = buys.length ? formatMoney(buys[0].price) : '-';
+                document.getElementById(`next-sell-${safe}`).innerText = sells.length ? formatMoney(sells[0].price) : '-';
+
+                const allOrders = [...sells.reverse(), ...buys];
+                document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase()}</b></td><td>${formatMoney(o.price)}</td><td>${o.amount}</td></tr>`).join('');
+                document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side.toUpperCase()}</span></td><td>${formatMoney(t.price)}</td><td>${formatMoney(t.cost)}</td></tr>`).join('');
+            } catch(e) { console.error(e); }
+        }
+
+        function renderCandleChart(safeSym, data, gridLines) {
+            const dom = document.getElementById(`chart-${safeSym}`);
+            if(!dom) return;
+            if (!data || data.length === 0) return;
+            const currentPrice = data[data.length - 1][4]; 
+            const validData = data.filter(d => d[4] > currentPrice * 0.5);
+            let chart = echarts.getInstanceByDom(dom);
+            if (!chart) chart = echarts.init(dom);
+            const markLines = gridLines.map(p => ({ yAxis: p, lineStyle: { color: '#9ca3af', type: 'dashed', opacity: 0.5 } }));
+            const option = { animation: false, grid: { left: 10, right: 60, top: 10, bottom: 20, containLabel: true }, tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } }, xAxis: { type: 'category', data: validData.map(i => i[0]), scale: true, boundaryGap: true, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false } }, yAxis: { scale: true, position: 'right', splitLine: { show: true, lineStyle: { color: '#f3f4f6' } } }, dataZoom: [{ type: 'inside', start: 60, end: 100 }], series: [{ type: 'candlestick', data: validData.map(i => [i[1], i[2], i[3], i[4]]), itemStyle: { color: '#0ecb81', color0: '#f6465d', borderColor: '#0ecb81', borderColor0: '#f6465d' }, markLine: { symbol: 'none', data: markLines, label: { show: false }, silent: true } }] };
+            chart.setOption(option);
+        }
+
         async function loadConfigForm() {
             try {
                 const res = await fetch('/api/config');
@@ -174,32 +254,14 @@
                                     </div>
                                 </div>
                                 <div class="card-body">
-                                    <div class="mb-3">
-                                        <label class="form-label">Inversió per Línia (USDC)</label>
-                                        <div class="input-group">
-                                            <span class="input-group-text">$</span>
-                                            <input type="number" class="form-control" id="amount-${index}" value="${strategy.amount_per_grid}">
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-6 mb-3">
-                                            <label class="form-label">Nº Línies</label>
-                                            <input type="number" class="form-control" id="qty-${index}" value="${strategy.grids_quantity}">
-                                        </div>
-                                        <div class="col-6 mb-3">
-                                            <label class="form-label">Spread (%)</label>
-                                            <div class="input-group">
-                                                <input type="number" class="form-control" id="spread-${index}" value="${strategy.grid_spread}" step="0.1">
-                                                <span class="input-group-text">%</span>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <div class="mb-3"><label class="form-label">Inversió per Línia (USDC)</label><div class="input-group"><span class="input-group-text">$</span><input type="number" class="form-control" id="amount-${index}" value="${strategy.amount_per_grid}"></div></div>
+                                    <div class="row"><div class="col-6 mb-3"><label class="form-label">Nº Línies</label><input type="number" class="form-control" id="qty-${index}" value="${strategy.grids_quantity}"></div><div class="col-6 mb-3"><label class="form-label">Spread (%)</label><div class="input-group"><input type="number" class="form-control" id="spread-${index}" value="${strategy.grid_spread}" step="0.1"><span class="input-group-text">%</span></div></div></div>
                                 </div>
                             </div>
                         </div>`;
                     container.innerHTML += html;
                 });
-            } catch (e) { console.error(e); alert("Error llegint la configuració."); }
+            } catch (e) { console.error(e); }
         }
 
         function toggleCard(index) {
@@ -227,33 +289,24 @@
             const jsonString = JSON.stringify(currentConfigObj, null, 2);
             const msgBox = document.getElementById('config-alert');
             try {
-                const res = await fetch('/api/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: jsonString })
-                });
+                const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: jsonString }) });
                 const data = await res.json();
                 msgBox.style.display = 'block';
                 if (res.ok) {
                     msgBox.className = 'alert alert-success';
                     msgBox.innerHTML = '<i class="fa-solid fa-check-circle"></i> Configuració guardada! Recarregant...';
                     setTimeout(() => { location.reload(); }, 1500);
-                } else {
-                    msgBox.className = 'alert alert-danger';
-                    msgBox.innerText = 'Error: ' + data.detail;
-                }
+                } else { msgBox.className = 'alert alert-danger'; msgBox.innerText = 'Error: ' + data.detail; }
             } catch (e) { alert("Error de connexió al guardar."); }
         }
 
         function setTimeframe(tf) {
             currentTimeframe = tf;
-            document.querySelectorAll('.tf-btn').forEach(btn => {
-                btn.classList.remove('active');
-                if(btn.innerText.toLowerCase() === tf) btn.classList.add('active');
-            });
+            document.querySelectorAll('.tf-btn').forEach(btn => { btn.classList.remove('active'); if(btn.innerText.toLowerCase() === tf) btn.classList.add('active'); });
             if (currentMode !== 'home' && currentMode !== 'config') loadSymbol(currentMode);
         }
 
+        // INIT
         async function init() {
             try {
                 const res = await fetch('/api/status');
@@ -275,26 +328,7 @@
                         div.id = `content-${safe}`;
                         div.innerHTML = `
                             <div class="row">
-                                <div class="col-lg-8 mb-3">
-                                    <div class="card h-100">
-                                        <div class="card-header d-flex justify-content-between align-items-center">
-                                            <div class="d-flex align-items-center">
-                                                <span>Gràfic Preu</span>
-                                                <div class="btn-group ms-3" role="group">
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1m')">1m</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('5m')">5m</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn active" onclick="setTimeframe('15m')">15m</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1h')">1h</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('4h')">4h</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1d')">1d</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1w')">1w</button>
-                                                </div>
-                                            </div>
-                                            <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
-                                        </div>
-                                        <div class="card-body p-1"><div id="chart-${safe}" class="chart-container"></div></div>
-                                    </div>
-                                </div>
+                                <div class="col-lg-8 mb-3"><div class="card h-100"><div class="card-header d-flex justify-content-between align-items-center"><div class="d-flex align-items-center"><span>Gràfic Preu</span><div class="btn-group ms-3" role="group"><button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1m')">1m</button><button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('5m')">5m</button><button type="button" class="btn btn-outline-secondary tf-btn active" onclick="setTimeframe('15m')">15m</button><button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1h')">1h</button><button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('4h')">4h</button><button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1d')">1d</button><button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1w')">1w</button></div></div><span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span></div><div class="card-body p-1"><div id="chart-${safe}" class="chart-container"></div></div></div></div>
                                 <div class="col-lg-4 mb-3"><div class="card h-100"><div class="card-header">Estat del Grid</div><div class="card-body"><div class="row g-2 text-center mb-4"><div class="col-6"><div class="bg-buy p-3 rounded"><small class="d-block fw-bold mb-1">COMPRES</small><b class="fs-3" id="count-buy-${safe}">0</b></div></div><div class="col-6"><div class="bg-sell p-3 rounded"><small class="d-block fw-bold mb-1">VENDES</small><b class="fs-3" id="count-sell-${safe}">0</b></div></div></div><ul class="list-group list-group-flush"><li class="list-group-item d-flex justify-content-between"><span>Pròx. Compra</span><b class="text-buy" id="next-buy-${safe}">--</b></li><li class="list-group-item d-flex justify-content-between"><span>Pròx. Venda</span><b class="text-sell" id="next-sell-${safe}">--</b></li></ul></div></div></div>
                             </div>
                             <div class="row">
@@ -307,59 +341,6 @@
                 }
                 loadHome();
             } catch (e) { console.error("Error init:", e); }
-        }
-
-        async function loadHome() {
-            try {
-                const res = await fetch('/api/status');
-                const data = await res.json();
-                document.getElementById('status-badge').innerText = data.status === 'Running' ? 'OPERATIU' : 'ATURAT';
-                document.getElementById('status-badge').className = data.status === 'Running' ? 'badge bg-success' : 'badge bg-danger';
-                document.getElementById('total-balance').innerText = `${data.total_usdc_value} USDC`;
-                document.getElementById('dash-profit').innerText = `+${data.session_profit} $`;
-                document.getElementById('dash-trades').innerText = data.session_trades;
-                document.getElementById('dash-top-coin').innerText = data.top_coin;
-                document.getElementById('dash-uptime').innerText = data.uptime;
-                const dom = document.getElementById('pieChart');
-                if (dom) {
-                    const chart = echarts.getInstanceByDom(dom) || echarts.init(dom);
-                    chart.setOption({ tooltip: { trigger: 'item' }, legend: { bottom: '0%' }, series: [{ type: 'pie', radius: ['40%', '70%'], center: ['50%', '45%'], data: data.portfolio_distribution }] });
-                }
-                document.getElementById('config-list').innerHTML = data.active_pairs.map(p => `<li class="list-group-item d-flex justify-content-between"><span>${p}</span> <span class="badge bg-success bg-opacity-25 text-success">Actiu</span></li>`).join('');
-            } catch(e) { console.error(e); }
-        }
-
-        async function loadSymbol(symbol) {
-            const safe = symbol.replace('/', '_');
-            try {
-                const res = await fetch(`/api/details/${symbol}?timeframe=${currentTimeframe}`);
-                if (!res.ok) return;
-                const data = await res.json();
-                document.getElementById(`price-${safe}`).innerText = `${data.price} USDC`;
-                renderCandleChart(safe, data.chart_data, data.grid_lines);
-                const buys = data.open_orders.filter(o => o.side === 'buy').sort((a,b) => b.price - a.price);
-                const sells = data.open_orders.filter(o => o.side === 'sell').sort((a,b) => a.price - b.price);
-                document.getElementById(`count-buy-${safe}`).innerText = buys.length;
-                document.getElementById(`count-sell-${safe}`).innerText = sells.length;
-                document.getElementById(`next-buy-${safe}`).innerText = buys.length ? parseFloat(buys[0].price).toFixed(4) : '-';
-                document.getElementById(`next-sell-${safe}`).innerText = sells.length ? parseFloat(sells[0].price).toFixed(4) : '-';
-                const allOrders = [...sells.reverse(), ...buys];
-                document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase()}</b></td><td>${parseFloat(o.price).toFixed(5)}</td><td>${o.amount}</td></tr>`).join('');
-                document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side}</span></td><td>${parseFloat(t.price).toFixed(5)}</td><td>${parseFloat(t.cost).toFixed(2)}</td></tr>`).join('');
-            } catch(e) { console.error(e); }
-        }
-
-        function renderCandleChart(safeSym, data, gridLines) {
-            const dom = document.getElementById(`chart-${safeSym}`);
-            if(!dom) return;
-            if (!data || data.length === 0) return;
-            const currentPrice = data[data.length - 1][4]; 
-            const validData = data.filter(d => d[4] > currentPrice * 0.5);
-            let chart = echarts.getInstanceByDom(dom);
-            if (!chart) chart = echarts.init(dom);
-            const markLines = gridLines.map(p => ({ yAxis: p, lineStyle: { color: '#9ca3af', type: 'dashed', opacity: 0.5 } }));
-            const option = { animation: false, grid: { left: 10, right: 60, top: 10, bottom: 20, containLabel: true }, tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } }, xAxis: { type: 'category', data: validData.map(i => i[0]), scale: true, boundaryGap: true, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false } }, yAxis: { scale: true, position: 'right', splitLine: { show: true, lineStyle: { color: '#f3f4f6' } } }, dataZoom: [{ type: 'inside', start: 60, end: 100 }], series: [{ type: 'candlestick', data: validData.map(i => [i[1], i[2], i[3], i[4]]), itemStyle: { color: '#0ecb81', color0: '#f6465d', borderColor: '#0ecb81', borderColor0: '#f6465d' }, markLine: { symbol: 'none', data: markLines, label: { show: false }, silent: true } }] };
-            chart.setOption(option);
         }
 
         init();
