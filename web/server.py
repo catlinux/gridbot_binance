@@ -4,15 +4,16 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 import uvicorn
 import os
-import pandas as pd
+import time
 from datetime import datetime
+from core.database import BotDatabase 
 
 app = FastAPI()
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-bot_instance = None
+db = BotDatabase()
+bot_instance = None 
 
 def start_server(bot, host="0.0.0.0", port=8000):
     global bot_instance
@@ -25,82 +26,81 @@ async def read_root(request: Request):
 
 @app.get("/api/status")
 async def get_status():
-    """
-    Retorna l'estat global i la distribució de la cartera.
-    """
     if not bot_instance: return {"status": "Offline"}
     
+    # Preus de la DB
+    prices = db.get_all_prices()
+    
+    # Portfolio
     portfolio = []
-    total_value_usdc = 0.0
-
-    # 1. Saldo USDC (Base)
-    usdc_bal = bot_instance.connector.get_asset_balance('USDC')
-    # Afegeix el bloquejat en ordres de compra (opcional, per ser precisos agafem 'total')
+    total_val = 0.0
+    
     try:
-        full_balance = bot_instance.connector.exchange.fetch_balance()
-        usdc_total = full_balance.get('USDC', {}).get('total', 0.0)
-    except:
-        usdc_total = usdc_bal
+        usdc = bot_instance.connector.get_asset_balance('USDC')
+    except: usdc = 0.0
+    portfolio.append({"name": "USDC", "value": round(usdc, 2)})
+    total_val += usdc
 
-    portfolio.append({"name": "USDC", "value": round(usdc_total, 2)})
-    total_value_usdc += usdc_total
-
-    # 2. Calcular valor de cada moneda activa en USDC
     for symbol in bot_instance.active_pairs:
-        base_asset = symbol.split('/')[0] # BTC, XRP...
-        
+        base = symbol.split('/')[0]
         try:
-            # Saldo total (lliure + bloquejat en vendes)
-            asset_qty = full_balance.get(base_asset, {}).get('total', 0.0)
+            qty = bot_instance.connector.get_total_balance(base)
+            price = prices.get(symbol, 0.0)
+            if price == 0: price = bot_instance.connector.fetch_current_price(symbol)
             
-            # Preu actual
-            current_price = bot_instance.connector.fetch_current_price(symbol)
-            
-            # Valor en USDC
-            value_in_usdc = asset_qty * current_price
-            
-            if value_in_usdc > 1.0: # Només mostrem si val més d'1$
-                portfolio.append({"name": base_asset, "value": round(value_in_usdc, 2)})
-                total_value_usdc += value_in_usdc
-                
-        except Exception as e:
-            print(f"Error calculant portfolio {symbol}: {e}")
+            val = qty * price
+            if val > 1:
+                portfolio.append({"name": base, "value": round(val, 2)})
+                total_val += val
+        except: pass
 
+    # --- CÀLCUL ESTADÍSTIQUES (QUE FALTAVA) ---
+    tot_trades = 0
+    tot_profit = 0.0
+    best_coin = "-"
+    max_p = -999999.0
+
+    if hasattr(bot_instance, 'session_stats'):
+        for sym, stats in bot_instance.session_stats.items():
+            tot_trades += stats['trades']
+            tot_profit += stats['profit']
+            if stats['profit'] > max_p and stats['profit'] > 0:
+                max_p = stats['profit']
+                best_coin = sym
+    
+    if best_coin == "-": best_coin = "Cap"
+
+    uptime_sec = int(time.time() - bot_instance.global_start_time)
+    hours = uptime_sec // 3600
+    mins = (uptime_sec % 3600) // 60
+    
     return {
         "status": "Running" if bot_instance.is_running else "Stopped",
         "active_pairs": bot_instance.active_pairs,
-        "total_usdc_value": round(total_value_usdc, 2),
-        "portfolio_distribution": portfolio
+        "balance_usdc": round(usdc, 2),
+        "total_usdc_value": round(total_val, 2),
+        "portfolio_distribution": portfolio,
+        "session_trades": tot_trades,
+        "session_profit": round(tot_profit, 4),
+        "top_coin": best_coin,
+        "uptime": f"{hours}h {mins}m"
     }
 
 @app.get("/api/details/{symbol:path}")
 async def get_pair_details(symbol: str):
-    if not bot_instance: return {}
+    data = db.get_pair_data(symbol)
     
-    # Dades bàsiques
-    current_price = bot_instance.connector.fetch_current_price(symbol)
-    open_orders = bot_instance.connector.fetch_open_orders(symbol)
-    
-    # Històric
-    trades = bot_instance.connector.fetch_my_trades(symbol, limit=20)
-    if trades: trades.sort(key=lambda x: x['timestamp'], reverse=True)
-
-    # Gràfic
-    ohlcv = bot_instance.connector.fetch_candles(symbol, timeframe='5m', limit=100)
     chart_data = []
-    for candle in ohlcv:
-        dt = datetime.fromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M')
-        chart_data.append([dt, candle[1], candle[4], candle[3], candle[2]])
-
-    # Estadístiques Addicionals (Línies Grid)
-    # Recuperem les línies fixes per pintar-les o mostrar-les
-    grid_lines = bot_instance.levels.get(symbol, [])
+    if data['candles']:
+        for candle in data['candles']:
+            dt = datetime.fromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M')
+            chart_data.append([dt, candle[1], candle[4], candle[3], candle[2]])
 
     return {
         "symbol": symbol,
-        "price": current_price,
-        "open_orders": open_orders,
-        "trades": trades,
+        "price": data['price'],
+        "open_orders": data['open_orders'],
+        "trades": data['trades'],
         "chart_data": chart_data,
-        "grid_lines": grid_lines
+        "grid_lines": data['grid_levels']
     }
