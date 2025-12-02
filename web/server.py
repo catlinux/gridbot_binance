@@ -28,10 +28,7 @@ async def read_root(request: Request):
 async def get_status():
     if not bot_instance: return {"status": "Offline"}
     
-    # Preus de la DB
     prices = db.get_all_prices()
-    
-    # Portfolio
     portfolio = []
     total_val = 0.0
     
@@ -47,14 +44,12 @@ async def get_status():
             qty = bot_instance.connector.get_total_balance(base)
             price = prices.get(symbol, 0.0)
             if price == 0: price = bot_instance.connector.fetch_current_price(symbol)
-            
             val = qty * price
             if val > 1:
                 portfolio.append({"name": base, "value": round(val, 2)})
                 total_val += val
         except: pass
 
-    # --- CÀLCUL ESTADÍSTIQUES (QUE FALTAVA) ---
     tot_trades = 0
     tot_profit = 0.0
     best_coin = "-"
@@ -71,8 +66,6 @@ async def get_status():
     if best_coin == "-": best_coin = "Cap"
 
     uptime_sec = int(time.time() - bot_instance.global_start_time)
-    hours = uptime_sec // 3600
-    mins = (uptime_sec % 3600) // 60
     
     return {
         "status": "Running" if bot_instance.is_running else "Stopped",
@@ -83,18 +76,34 @@ async def get_status():
         "session_trades": tot_trades,
         "session_profit": round(tot_profit, 4),
         "top_coin": best_coin,
-        "uptime": f"{hours}h {mins}m"
+        "uptime": f"{uptime_sec // 3600}h {(uptime_sec % 3600) // 60}m"
     }
 
+# --- MODIFICAT PER ACCEPTAR TIMEFRAME ---
 @app.get("/api/details/{symbol:path}")
-async def get_pair_details(symbol: str):
+async def get_pair_details(symbol: str, timeframe: str = '15m'):
+    # Dades generals des de la DB (ràpid)
     data = db.get_pair_data(symbol)
     
+    # Gràfic: El demanem DIRECTAMENT a Binance via el connector del bot
+    # per tenir la temporalitat exacta que vol l'usuari al moment.
+    raw_candles = []
+    if bot_instance:
+        try:
+            # Demanem 100 espelmes del timeframe sol·licitat
+            raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=100)
+        except Exception as e:
+            print(f"Error fetching candles live: {e}")
+            # Si falla, intentem usar les de la DB com a backup (si coincideixen)
+            if data['candles']: raw_candles = data['candles']
+    else:
+        # Mode offline: usem DB
+        raw_candles = data['candles']
+
     chart_data = []
-    if data['candles']:
-        for candle in data['candles']:
-            dt = datetime.fromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M')
-            chart_data.append([dt, candle[1], candle[4], candle[3], candle[2]])
+    for candle in raw_candles:
+        dt = datetime.fromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M')
+        chart_data.append([dt, candle[1], candle[4], candle[3], candle[2]])
 
     return {
         "symbol": symbol,
