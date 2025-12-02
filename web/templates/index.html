@@ -19,8 +19,12 @@
         .text-buy { color: #0ecb81; } .text-sell { color: #f6465d; }
         .bg-buy { background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
         .bg-sell { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        
         .chart-container { height: 450px; width: 100%; }
+        
+        /* --- CANVI D'ESTIL: Més alçada pel gràfic --- */
         .chart-pie { height: 380px; width: 100%; }
+        
         .stat-val { font-size: 1.5rem; font-weight: 800; display: block; }
         .stat-lbl { font-size: 0.75rem; text-transform: uppercase; color: #6b7280; font-weight: 600; }
         .border-l-success { border-left: 4px solid #10b981; }
@@ -106,11 +110,9 @@
         let currentTimeframe = '15m';
         let currentConfigObj = null; 
 
-        // --- FORMATADOR MANUAL I ROBUST (Català 2 decimals) ---
         function formatMoney(amount) {
             if (amount === undefined || amount === null || isNaN(amount)) return '0,00 $';
             let num = Number(amount);
-            // Fixem a 2 decimals, canviem punt per coma, afegim $
             return num.toFixed(2).replace('.', ',') + ' $';
         }
 
@@ -127,14 +129,12 @@
                 if (!res.ok) throw new Error("Error API");
                 const data = await res.json();
                 
-                // Si la connexió va bé, amaguem error
                 document.getElementById('error-overlay').style.display = 'none';
 
                 document.getElementById('status-badge').innerText = data.status === 'Running' ? 'OPERATIU' : 'ATURAT';
                 document.getElementById('status-badge').className = data.status === 'Running' ? 'badge bg-success' : 'badge bg-danger';
                 document.getElementById('total-balance').innerText = formatMoney(data.total_usdc_value);
                 
-                // Utilitzem l'operador ?. per evitar errors si falta algun camp
                 document.getElementById('glob-profit').innerText = formatMoney(data.global?.profit);
                 document.getElementById('glob-trades').innerText = data.global?.trades || 0;
                 document.getElementById('glob-coin').innerText = data.global?.best_coin || '-';
@@ -144,13 +144,17 @@
                 document.getElementById('sess-coin').innerText = data.session?.best_coin || '-';
                 document.getElementById('sess-uptime').innerText = data.uptime;
 
-                // Gràfics
+                // --- CRIDA ALS GRÀFICS (NOU ESTIL) ---
                 renderPieChart('portfolioChart', 'Cartera', data.portfolio_distribution);
                 renderPieChart('sessionTradesChart', 'Trades Sessió', data.session_trades_distribution);
                 renderPieChart('globalTradesChart', 'Trades Global', data.global_trades_distribution);
 
                 document.getElementById('config-list').innerHTML = data.active_pairs.map(p => `<li class="list-group-item d-flex justify-content-between"><span>${p}</span> <span class="badge bg-success bg-opacity-25 text-success">Actiu</span></li>`).join('');
-                
+
+                if (!initialized && data.active_pairs.length > 0) {
+                    createCoinTabs(data.active_pairs);
+                    initialized = true;
+                }
             } catch(e) { 
                 console.error("Error home:", e); 
                 document.getElementById('error-msg').innerText = "Error de connexió amb el servidor";
@@ -158,16 +162,17 @@
             }
         }
 
-        // --- AQUESTA ÉS L'ÚNICA FUNCIÓ MODIFICADA ---
+        // --- FUNCIÓ MODIFICADA: LLEGENDA VERTICAL I GRÀFIC A LA DRETA ---
         function renderPieChart(domId, name, data) {
             const dom = document.getElementById(domId);
             if (!dom) return;
+            
             let chart = echarts.getInstanceByDom(dom);
             if (!chart) chart = echarts.init(dom);
             
             if (!data || data.length === 0) {
                 chart.setOption({ 
-                    title: { text: 'Sense dades', left: 'center', top: 'center', textStyle: { color: '#ccc' } },
+                    title: { text: 'Sense dades', left: 'center', top: 'center', textStyle: { color: '#ccc' } }, 
                     series: [] 
                 }, true);
                 return;
@@ -175,7 +180,7 @@
 
             const option = {
                 tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-                // CANVI LLEGENDA: Vertical a l'esquerra
+                // LLEGENDA VERTICAL A L'ESQUERRA
                 legend: { 
                     orient: 'vertical',
                     left: 'left',
@@ -183,16 +188,24 @@
                     type: 'scroll'
                 },
                 series: [{
-                    name: name, type: 'pie', radius: ['50%', '80%'],
-                    // CANVI POSICIÓ: Donut a la dreta
-                    center: ['60%', '50%'], 
+                    name: name,
+                    type: 'pie',
+                    // DONUT MÉS GRAN
+                    radius: ['45%', '80%'],
+                    // DESPLAÇAT A LA DRETA
+                    center: ['65%', '50%'],
                     itemStyle: { borderRadius: 5, borderColor: '#fff', borderWidth: 2 },
-                    label: { show: false }, data: data
+                    label: { show: false },
+                    data: data
                 }]
             };
             chart.setOption(option);
+            
+            // Assegurem que s'adapti al redimensionar
+            window.addEventListener('resize', function() {
+                chart.resize();
+            });
         }
-        // -------------------------------------------
 
         async function loadSymbol(symbol) {
             const safe = symbol.replace('/', '_');
@@ -200,21 +213,18 @@
                 const res = await fetch(`/api/details/${symbol}?timeframe=${currentTimeframe}`);
                 if (!res.ok) return;
                 const data = await res.json();
-                
                 document.getElementById(`price-${safe}`).innerText = formatMoney(data.price);
                 renderCandleChart(safe, data.chart_data, data.grid_lines);
-                
                 const buys = data.open_orders.filter(o => o.side === 'buy').sort((a,b) => b.price - a.price);
                 const sells = data.open_orders.filter(o => o.side === 'sell').sort((a,b) => a.price - b.price);
                 document.getElementById(`count-buy-${safe}`).innerText = buys.length;
                 document.getElementById(`count-sell-${safe}`).innerText = sells.length;
                 document.getElementById(`next-buy-${safe}`).innerText = buys.length ? formatMoney(buys[0].price) : '-';
                 document.getElementById(`next-sell-${safe}`).innerText = sells.length ? formatMoney(sells[0].price) : '-';
-
                 const allOrders = [...sells.reverse(), ...buys];
-                document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase()}</b></td><td>${formatMoney(o.price)}</td><td>${o.amount}</td></tr>`).join('');
-                document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side.toUpperCase()}</span></td><td>${formatMoney(t.price)}</td><td>${formatMoney(t.cost)}</td></tr>`).join('');
-            } catch(e) { console.error(e); }
+                document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><span class="${o.side=='buy'?'badge-buy':'badge-sell'} fw-bold">${o.side.toUpperCase()}</span></td><td>${formatMoney(o.price)}</td><td>${o.amount}</td></tr>`).join('');
+                document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td class="text-muted">${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="${t.side=='buy'?'text-buy':'text-sell'} fw-bold">${t.side.toUpperCase()}</span></td><td>${formatMoney(t.price)}</td><td>${formatMoney(t.cost)}</td></tr>`).join('');
+            } catch(e) { console.error("Error symbol:", e); }
         }
 
         function renderCandleChart(safeSym, data, gridLines) {
@@ -246,22 +256,13 @@
                     const html = `
                         <div class="col-md-6 col-xl-4 mb-4">
                             <div class="card h-100 coin-card ${cardClass}" id="card-pair-${index}">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    <span class="fw-bold fs-5">${pair.symbol}</span>
-                                    <div class="form-check form-switch">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="enable-${index}" ${checked} onchange="toggleCard(${index})">
-                                        <label class="form-check-label fw-bold" for="enable-${index}">${isEnabled ? 'ON' : 'OFF'}</label>
-                                    </div>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-3"><label class="form-label">Inversió per Línia (USDC)</label><div class="input-group"><span class="input-group-text">$</span><input type="number" class="form-control" id="amount-${index}" value="${strategy.amount_per_grid}"></div></div>
-                                    <div class="row"><div class="col-6 mb-3"><label class="form-label">Nº Línies</label><input type="number" class="form-control" id="qty-${index}" value="${strategy.grids_quantity}"></div><div class="col-6 mb-3"><label class="form-label">Spread (%)</label><div class="input-group"><input type="number" class="form-control" id="spread-${index}" value="${strategy.grid_spread}" step="0.1"><span class="input-group-text">%</span></div></div></div>
-                                </div>
+                                <div class="card-header d-flex justify-content-between align-items-center"><span class="fw-bold fs-5">${pair.symbol}</span><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" id="enable-${index}" ${checked} onchange="toggleCard(${index})"><label class="form-check-label fw-bold" for="enable-${index}">${isEnabled ? 'ON' : 'OFF'}</label></div></div>
+                                <div class="card-body"><div class="mb-3"><label class="form-label">Inversió per Línia (USDC)</label><div class="input-group"><span class="input-group-text">$</span><input type="number" class="form-control" id="amount-${index}" value="${strategy.amount_per_grid}"></div></div><div class="row"><div class="col-6 mb-3"><label class="form-label">Nº Línies</label><input type="number" class="form-control" id="qty-${index}" value="${strategy.grids_quantity}"></div><div class="col-6 mb-3"><label class="form-label">Spread (%)</label><div class="input-group"><input type="number" class="form-control" id="spread-${index}" value="${strategy.grid_spread}" step="0.1"><span class="input-group-text">%</span></div></div></div></div>
                             </div>
                         </div>`;
                     container.innerHTML += html;
                 });
-            } catch (e) { console.error(e); }
+            } catch (e) { console.error(e); alert("Error llegint la configuració."); }
         }
 
         function toggleCard(index) {
