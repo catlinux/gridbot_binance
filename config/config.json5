@@ -1,57 +1,21 @@
-// Arxiu: gridbot_binance/config/config.json5
 {
-  // ---------------------------------------------------------------------------
-  // CONFIGURACIÓ DEL SISTEMA
-  // ---------------------------------------------------------------------------
   "system": {
-    "cycle_delay": 5, // Segons d'espera entre revisions del mercat
-    "log_level": "INFO" // INFO (normal) o DEBUG (per veure tots els càlculs)
+    "cycle_delay": 5,
+    "log_level": "INFO"
   },
-
-  // ---------------------------------------------------------------------------
-  // GUIA RÀPIDA: QUIN SPREAD HE DE POSAR? (%)
-  // El 'grid_spread' és la distància entre línies.
-  // ---------------------------------------------------------------------------
-  // 0.1% - 0.3% -> SCALPING AGRESSIU
-  //    - Moltes operacions per hora.
-  //    - Risc: Les comissions (fees) es poden menjar el benefici.
-  //    - Ús: Només en mercats molt estables (Stablecoins o BTC lateral).
-  //
-  // 0.5% - 0.8% -> TRADING ESTÀNDARD (Recomanat BTC/ETH)
-  //    - Equilibri entre freqüència i benefici net.
-  //    - Ús: Monedes amb molta liquiditat i moviment moderat.
-  //
-  // 1.0% - 1.5% -> SWING TRADING (Recomanat Alts: SOL, BNB)
-  //    - Operacions més espaiades. Captura moviments mitjans.
-  //    - Ús: Monedes que es mouen un 5-10% al dia.
-  //
-  // 2.0% - 3.0% -> ALTA VOLATILITAT (Recomanat Memes: DOGE, PEPE, XRP)
-  //    - Graella molt ampla per no quedar atrapat si el preu cau ràpid.
-  //    - Ús: Monedes que poden pujar o baixar un 20% en hores.
-  // ---------------------------------------------------------------------------
-
-  // ESTRATÈGIA PER DEFECTE (Fallback)
-  // S'utilitzarà si una moneda activada no té el seu bloc "strategy" definit.
   "default_strategy": {
     "grids_quantity": 10,
     "amount_per_grid": 50,
-    "grid_spread": 1.0
+    "grid_spread": 1
   },
-
-  // ---------------------------------------------------------------------------
-  // LLISTA DE PARELLS I ESTRATÈGIES
-  // ---------------------------------------------------------------------------
   "pairs": [
-    
-    // --- GRUP 1: MAJOR CAPS (BTC, ETH) ---
-    // Estratègia: Inversió forta, graella més atapeïda (0.6 - 0.8%)
     {
       "symbol": "BTC/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 10,   // 20 línies per cobrir més rang
-        "amount_per_grid": 150, // Inversió alta
-        "grid_spread": 0.3      // 0.6% distància (Captura moviments petits)
+        "grids_quantity": 10,
+        "amount_per_grid": 150,
+        "grid_spread": 0.15
       }
     },
     {
@@ -60,33 +24,27 @@
       "strategy": {
         "grids_quantity": 15,
         "amount_per_grid": 100,
-        "grid_spread": 0.3      // Una mica més ample que BTC
+        "grid_spread": 0.3
       }
     },
-
-    // --- GRUP 2: MID CAPS (BNB, SOL) ---
-    // Estratègia: Inversió mitjana, graella estàndard (1.0 - 1.5%)
     {
       "symbol": "BNB/USDC",
       "enabled": true,
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 80,
-        "grid_spread": 0.2      // 1% és l'estàndard d'or
+        "grid_spread": 0.2
       }
     },
     {
       "symbol": "SOL/USDC",
-      "enabled": true,
+      "enabled": false,
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 80,
-        "grid_spread": 0.2      // SOL es mou ràpid, millor 1.5%
+        "grid_spread": 0.2
       }
     },
-
-    // --- GRUP 3: VOLATILITY / ALTS (ADA, XRP, DOGE) ---
-    // Estratègia: Inversió baixa, graella MOLT ampla (2.0%+) per seguretat
     {
       "symbol": "ADA/USDC",
       "enabled": true,
@@ -102,7 +60,7 @@
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 50,
-        "grid_spread": 0.3      // XRP té espigues violentes, 2% és segur
+        "grid_spread": 0.3
       }
     },
     {
@@ -111,7 +69,7 @@
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 50,
-        "grid_spread": 0.3      // DOGE és molt volàtil, 3% evita quedar-se sense saldo
+        "grid_spread": 0.3
       }
     }
   ]

@@ -2,6 +2,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.95+-green.svg)
+![SQLite](https://img.shields.io/badge/SQLite-Integrated-blue.svg)
 ![Binance](https://img.shields.io/badge/Binance-Connect-yellow.svg)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)
 
@@ -21,6 +22,7 @@ Un bot de trading automàtic d'alta freqüència basat en l'estratègia **Grid T
 * **Protecció d'Inventari 🛡️:** Si reinicies l'estratègia, el bot "congela" les monedes comprades anteriorment per no vendre-les amb pèrdues.
 
 ### 🌐 Panell de Control Web
+* **Formulari de Configuració:** Modifica paràmetres (inversió, spread, rangs) directament des del navegador sense tocar fitxers de codi.
 * **Dashboard Professional:** Visió global del saldo, beneficis de sessió i estat del sistema.
 * **Gràfics en Temps Real:** Integració amb **Apache ECharts** per visualitzar espelmes i línies de grid.
 * **Timeframes Configurables:** Canvia la vista del gràfic (1m, 5m, 1h, 4h...) a l'instant.
@@ -34,7 +36,7 @@ Un bot de trading automàtic d'alta freqüència basat en l'estratègia **Grid T
 
 ---
 
-## 🛠️ Instal·lació
+## 🛠️ Instal·lació Ràpida
 
 ### 1. Requisits
 * Python 3.10 o superior.
@@ -60,6 +62,7 @@ Crea l'arxiu de credencials basat en l'exemple:
 
 ```bash
 cp config/.env.example config/.env
+# Edita l'arxiu amb el teu editor preferit (nano, vim, code...)
 ```
 
 Edita `config/.env` i afegeix les teves claus API:
@@ -88,33 +91,36 @@ Edita `config/config.json5` per definir quines monedes operar i com:
 
 ---
 
-## ▶️ Ús
+## ▶️ Ús i Control
 
-### Iniciar el Bot
-Això arrencarà el motor de trading i el servidor web simultàniament.
+### Iniciar el Sistema
+Aquesta comanda arrenca el motor de trading, el col·lector de dades i el servidor web.
 
 ```bash
 python main.py
 ```
 
-Obre el navegador a: **[http://localhost:8000](http://localhost:8000)**
+### Accés al Dashboard
+Obre el navegador i ves a:
+👉 **[http://localhost:8000](http://localhost:8000)**
 
 ### Eines d'Utilitat
 Si necessites reiniciar de zero o netejar ordres "zombis" de la Testnet:
 
-```bash
-# Cancel·la totes les ordres i mostra un resum del saldo
-python neteja.py
-
-# VENDRE TOT A MERCAT (Pas a USDC d'emergència)
-python vendre_tot.py
-```
+* **Neteja d'Ordres:** Cancel·la totes les ordres obertes i mostra un balanç del saldo total.
+  ```bash
+  python neteja.py
+  ```
+* **Liquidació Total:** Ven totes les criptomonedes a mercat per passar a USDC (Pànic/Reset).
+  ```bash
+  python vendre_tot.py
+  ```
 
 ---
 
 ## 📊 Guia d'Estratègia (Spread)
 
-El paràmetre `grid_spread` defineix l'agressivitat del bot:
+El paràmetre `grid_spread` defineix la distància entre línies. Configura-ho segons la volatilitat de la moneda:
 
 | Spread (%) | Tipus | Recomanat per a... |
 | :--- | :--- | :--- |
@@ -129,27 +135,25 @@ El paràmetre `grid_spread` defineix l'agressivitat del bot:
 
 ```text
 gridbot_binance/
-├── config/             # Configuració i claus (.env, config.json5)
-├── core/               # Lògica del nucli
-│   ├── bot.py          # Cervell principal (Grid Logic)
-│   ├── exchange.py     # Connector CCXT amb Binance
-│   └── database.py     # Gestió SQLite
-├── utils/              # Eines (Logger colors)
-├── web/                # Servidor Web (FastAPI)
-│   ├── server.py       # API Backend
-│   └── templates/      # Frontend HTML/JS
-├── main.py             # Punt d'entrada
+├── config/             # Configuració (.env, config.json5)
+├── core/               # Nucli del sistema
+│   ├── bot.py          # Lògica Grid Estàtic i Smart Reload
+│   ├── exchange.py     # Connector CCXT
+│   └── database.py     # Gestió SQLite i Persistència
+├── web/                # Interfície d'Usuari
+│   ├── server.py       # API Backend (FastAPI)
+│   └── templates/      # Frontend (Bootstrap + ECharts + JS)
+├── main.py             # Punt d'entrada (Multiprocess)
 └── neteja.py           # Script d'utilitat
 ```
 
 ---
 
-## ⚠️ Disclaimer
+## ⚠️ Avís Legal (Disclaimer)
 
-Aquest programari és per a fins educatius i experimentals. El trading de criptomonedes implica un alt risc financer.
-* **Utilitza sempre la Testnet** abans de posar diners reals.
-* L'autor no es fa responsable de les pèrdues financeres derivades de l'ús d'aquest bot.
-* Assegura't d'entendre com funciona el `Grid Trading` abans d'operar.
+Aquest programari és una eina d'automatització. El trading de criptomonedes comporta un risc significatiu de pèrdua de capital.
+* L'autor no es fa responsable de pèrdues financeres derivades de l'ús, configuració o errors del programari.
+* **Recomanació:** Prova sempre l'estratègia a la **Testnet** durant dies abans d'operar amb capital real.
 
 ---
 Desenvolupat amb ❤️ i Python.

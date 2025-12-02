@@ -1,10 +1,12 @@
 # Arxiu: gridbot_binance/web/server.py
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 import uvicorn
 import os
 import time
+import json5 # Necessari per validar la configuració abans de guardar
 from datetime import datetime
 from core.database import BotDatabase 
 
@@ -15,6 +17,10 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 db = BotDatabase()
 bot_instance = None 
 
+# Model de dades per rebre la nova config
+class ConfigUpdate(BaseModel):
+    content: str
+
 def start_server(bot, host="0.0.0.0", port=8000):
     global bot_instance
     bot_instance = bot
@@ -24,6 +30,7 @@ def start_server(bot, host="0.0.0.0", port=8000):
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+# --- API ESTAT (DASHBOARD) ---
 @app.get("/api/status")
 async def get_status():
     if not bot_instance: return {"status": "Offline"}
@@ -66,6 +73,8 @@ async def get_status():
     if best_coin == "-": best_coin = "Cap"
 
     uptime_sec = int(time.time() - bot_instance.global_start_time)
+    hours = uptime_sec // 3600
+    mins = (uptime_sec % 3600) // 60
     
     return {
         "status": "Running" if bot_instance.is_running else "Stopped",
@@ -76,29 +85,22 @@ async def get_status():
         "session_trades": tot_trades,
         "session_profit": round(tot_profit, 4),
         "top_coin": best_coin,
-        "uptime": f"{uptime_sec // 3600}h {(uptime_sec % 3600) // 60}m"
+        "uptime": f"{hours}h {mins}m"
     }
 
-# --- MODIFICAT PER ACCEPTAR TIMEFRAME ---
+# --- API DETALLS ---
 @app.get("/api/details/{symbol:path}")
 async def get_pair_details(symbol: str, timeframe: str = '15m'):
-    # Dades generals des de la DB (ràpid)
     data = db.get_pair_data(symbol)
     
-    # Gràfic: El demanem DIRECTAMENT a Binance via el connector del bot
-    # per tenir la temporalitat exacta que vol l'usuari al moment.
+    # Intentem obtenir candles live si el bot està corrent
     raw_candles = []
     if bot_instance:
         try:
-            # Demanem 100 espelmes del timeframe sol·licitat
             raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=100)
-        except Exception as e:
-            print(f"Error fetching candles live: {e}")
-            # Si falla, intentem usar les de la DB com a backup (si coincideixen)
-            if data['candles']: raw_candles = data['candles']
-    else:
-        # Mode offline: usem DB
-        raw_candles = data['candles']
+        except: pass
+    
+    if not raw_candles: raw_candles = data['candles']
 
     chart_data = []
     for candle in raw_candles:
@@ -113,3 +115,34 @@ async def get_pair_details(symbol: str, timeframe: str = '15m'):
         "chart_data": chart_data,
         "grid_lines": data['grid_levels']
     }
+
+# --- NOVA API CONFIGURACIÓ ---
+@app.get("/api/config")
+async def get_config():
+    """Llegeix l'arxiu de configuració i el retorna com a text."""
+    try:
+        config_path = 'config/config.json5'
+        if not os.path.exists(config_path):
+            raise HTTPException(status_code=404, detail="Arxiu no trobat")
+            
+        with open(config_path, 'r') as f:
+            content = f.read()
+        return {"content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/config")
+async def save_config(config: ConfigUpdate):
+    """Guarda la nova configuració i valida que sigui JSON5 correcte."""
+    try:
+        # 1. Validació de seguretat: és un JSON5 vàlid?
+        # Si això falla, salta a l'except i no guarda res. El bot no es trenca.
+        json5.loads(config.content)
+        
+        # 2. Guardar a disc
+        with open('config/config.json5', 'w') as f:
+            f.write(config.content)
+            
+        return {"status": "success", "message": "Configuració guardada correctament. El bot es reconfigurarà en breu."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error de sintaxi JSON5: {e}")
