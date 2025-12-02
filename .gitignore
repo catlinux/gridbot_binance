@@ -1,0 +1,21 @@
+# --- SEGURETAT (Crític) ---
+# Ignorem l'arxiu amb les claus API reals
+config/.env
+.env
+
+# --- ENTORN VIRTUAL ---
+# No volem pujar les llibreries, es baixen amb requirements.txt
+venv/
+env/
+
+# --- PYTHON CACHE ---
+# Arxius temporals que genera Python automàticament
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- LOGS I ALTRES ---
+*.log
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,18 @@
+gridbot_binance/
+├── config/
+│   ├── config.json5       # Configuració editable del bot
+│   └── .env               # Claus API i secrets (NO compartir)
+├── core/
+│   ├── __init__.py
+│   ├── bot.py             # Lògica principal del grid
+│   └── exchange.py        # Gestió connexió Binance (CCXT)
+├── utils/
+│   ├── __init__.py
+│   ├── logger.py          # Gestió de colors i logs a consola
+│   └── helpers.py         # Càlculs matemàtics auxiliars
+├── web/
+│   ├── __init__.py
+│   ├── server.py          # Servidor FastAPI
+│   └── templates/         # HTML per la interfície
+├── main.py                # Punt d'entrada (Run)
+└── requirements.txt       # Llibreries necessàries
