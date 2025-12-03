@@ -158,7 +158,7 @@ Esto dejará tu cuenta limpia de órdenes limit, lista para apagar el sistema o 
 
 ---
 
-## ❤️ Ayuda al Proyecto y Donaciones
+## ❤️ Ayuda al Proyecto y Soporte
 
 Este proyecto es Open Source y requiere muchas horas de desarrollo y mantenimiento. Si la herramienta te ha sido útil, te ha ayudado a aprender o te ha generado beneficios, considera hacer una pequeña donación. ¡Ayuda a mantener el código actualizado y a añadir nuevas funcionalidades!
 
