@@ -164,7 +164,7 @@ Este proyecto es Open Source y requiere muchas horas de desarrollo y mantenimien
 
 Puedes enviar tu apoyo a las siguientes direcciones (Redes baratas y rápidas):
 
-* **USDT / USDC / BNB (Red BSC - BEP20):**
+* **Polygon (MATIC):**
     `0x5dD9a7b2D831A319a68214C11015f64Dbc6bb79c`
 
 * **Solana (SOL):**
@@ -182,7 +182,7 @@ Puedes enviar tu apoyo a las siguientes direcciones (Redes baratas y rápidas):
 
 Este software es una herramienta de automatización experimental desarrollada con **fines exclusivamente educativos**. El trading de criptomonedas conlleva un riesgo significativo de pérdida de capital.
 
-* El autor (**Marc Sancho**) no se hace responsable de posibles pérdidas financieras, errores de ejecución, lucro cesante o problemas derivados del uso o configuración de este software.
+* El autor no se hace responsable de posibles pérdidas financieras, errores de ejecución, lucro cesante o problemas derivados del uso o configuración de este software.
 * **Recomendación:** Prueba siempre la estrategia en la **Testnet** de Binance durante varios días antes de operar con capital real. Úsalo bajo tu propia responsabilidad.
 
 ---
