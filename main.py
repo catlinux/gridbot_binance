@@ -10,10 +10,10 @@ def run_bot_logic(bot):
     try:
         bot.start()
     except Exception as e:
-        log.error(f"Error crític al fil del bot: {e}")
+        log.error(f"Error crítico en el hilo del bot: {e}")
 
 def main():
-    log.info("Iniciant Sistema Complet (Bot + Web)...")
+    log.info("Iniciando Sistema Completo (Bot + Web)...")
     
     bot = GridBot()
     
@@ -22,13 +22,13 @@ def main():
     
     time.sleep(2)
     
-    log.info("Iniciant servidor web a http://localhost:8000")
-    log.info("Prem Ctrl+C a la terminal per aturar tot el sistema.")
+    log.info("Iniciando servidor web en http://localhost:8000")
+    log.info("Pulsa Ctrl+C en la terminal para detener todo el sistema.")
     
     try:
         start_server(bot)
     except KeyboardInterrupt:
-        log.warning("Aturant sistema...")
+        log.warning("Deteniendo sistema...")
         sys.exit(0)
 
 if __name__ == "__main__":

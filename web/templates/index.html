@@ -1,32 +1,71 @@
 <!DOCTYPE html>
-<html lang="ca">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GridBot Pro</title>
+    <title>Bot de Grid Trading</title>
+    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
     <link rel="stylesheet" href="/static/css/style.css">
     
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="https://unpkg.com/json5@2/dist/index.min.js"></script>
+    
+    <style>
+        body { display: flex; flex-direction: column; min-height: 100vh; padding-bottom: 0; }
+        .main-content { flex: 1; }
+        .chart-pie { height: 320px; width: 100%; }
+        
+        .social-link { 
+            color: rgba(255,255,255,0.6); 
+            transition: all 0.3s; 
+            font-size: 1.5rem;
+        }
+        .social-link:hover { color: #fff; transform: translateY(-3px); }
+        
+        /* Estil per al disclaimer */
+        .disclaimer-box {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 15px;
+            font-size: 0.85rem;
+            color: #aaa;
+            margin-top: 20px;
+            text-align: justify;
+        }
+        
+        .crypto-addr { font-family: monospace; background: #f8f9fa; padding: 5px; border-radius: 4px; border: 1px solid #dee2e6; word-break: break-all;}
+    </style>
 </head>
 <body>
 
     <nav class="navbar navbar-dark mb-4">
         <div class="container-fluid px-4">
-            <a class="navbar-brand fw-bold" href="#">
-                <i class="fa-solid fa-robot me-2 text-primary"></i> GridBot Pro
+            <a class="navbar-brand d-flex align-items-center" href="#">
+                <i class="fa-solid fa-robot me-3 text-primary fs-4"></i>
+                <div class="d-flex flex-column justify-content-center">
+                    <span class="fw-bold fs-5" style="line-height: 1.1;">Bot de Grid Trading</span>
+                    <span class="fs-6 fw-normal text-white-50" style="font-size: 0.85rem !important;">
+                        Desarrollado por <span class="text-info fw-bold">Marc Sancho</span>
+                    </span>
+                </div>
             </a>
             <div class="text-white d-flex align-items-center">
-                <span id="status-badge" class="badge bg-secondary me-3">Connectant...</span>
+                <a href="#" class="text-white-50 me-4 text-decoration-none" title="Apoyar el proyecto" data-bs-toggle="modal" data-bs-target="#donationModal">
+                    <i class="fa-solid fa-heart text-danger"></i> <span class="d-none d-md-inline ms-1 small">Soporte</span>
+                </a>
+                
+                <span id="status-badge" class="badge bg-secondary me-3">Conectando...</span>
                 <span id="total-balance" class="fw-bold fs-5">-- USDC</span>
             </div>
         </div>
     </nav>
 
-    <div class="container-fluid px-4">
+    <div class="container-fluid px-4 main-content">
         <ul class="nav nav-tabs" id="mainTabs" role="tablist">
             <li class="nav-item">
                 <button class="nav-link active" id="tab-home" data-bs-toggle="tab" data-bs-target="#content-home" type="button" onclick="setMode('home')">
@@ -35,7 +74,7 @@
             </li>
             <li class="nav-item">
                 <button class="nav-link" id="tab-config" data-bs-toggle="tab" data-bs-target="#content-config" type="button" onclick="loadConfigForm()">
-                    <i class="fa-solid fa-sliders me-2"></i> Configuració
+                    <i class="fa-solid fa-sliders me-2"></i> Configuración
                 </button>
             </li>
         </ul>
@@ -44,47 +83,85 @@
             
             <div class="tab-pane fade show active" id="content-home" role="tabpanel">
                 
-                <div class="section-title"><i class="fa-solid fa-bolt me-1"></i> Sessió Actual</div>
+                <div class="section-title"><i class="fa-solid fa-bolt me-1"></i> Sesión Actual</div>
                 <div class="row mb-4">
-                    <div class="col-md-3"><div class="card p-3 border-l-session h-100"><span class="stat-lbl">Benefici Sessió</span><span id="dash-profit-session" class="stat-val text-success">--</span></div></div>
-                    <div class="col-md-3"><div class="card p-3 border-l-session h-100"><span class="stat-lbl">Operacions</span><span id="dash-trades-session" class="stat-val">--</span></div></div>
-                    <div class="col-md-3"><div class="card p-3 border-l-session h-100"><span class="stat-lbl">Millor Moneda</span><span id="dash-coin-session" class="stat-val">--</span></div></div>
-                    <div class="col-md-3"><div class="card p-3 border-l-session h-100"><span class="stat-lbl">Temps Actiu</span><span id="dash-uptime-session" class="stat-val text-primary">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-session h-100"><span class="stat-lbl">Beneficio Sesión</span><span id="dash-profit-session" class="stat-val text-success">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-session h-100"><span class="stat-lbl">Operaciones</span><span id="dash-trades-session" class="stat-val">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-session h-100"><span class="stat-lbl">Mejor Moneda</span><span id="dash-coin-session" class="stat-val">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-session h-100"><span class="stat-lbl">Tiempo Activo</span><span id="dash-uptime-session" class="stat-val text-primary">--</span></div></div>
                 </div>
 
-                <div class="section-title"><i class="fa-solid fa-database me-1"></i> Històric Global</div>
+                <div class="section-title"><i class="fa-solid fa-database me-1"></i> Histórico Global</div>
                 <div class="row mb-4">
-                    <div class="col-md-3"><div class="card p-3 border-l-global h-100"><span class="stat-lbl">Benefici Total</span><span id="dash-profit-total" class="stat-val">--</span></div></div>
-                    <div class="col-md-3"><div class="card p-3 border-l-global h-100"><span class="stat-lbl">Operacions Totals</span><span id="dash-trades-total" class="stat-val">--</span></div></div>
-                    <div class="col-md-3"><div class="card p-3 border-l-global h-100"><span class="stat-lbl">Top Moneda Històrica</span><span id="dash-coin-total" class="stat-val">--</span></div></div>
-                    <div class="col-md-3"><div class="card p-3 border-l-global h-100"><span class="stat-lbl">Temps Total Absolut</span><span id="dash-uptime-total" class="stat-val text-secondary">--</span></div></div>
-                </div>
-
-                <div class="row mb-4">
-                    <div class="col-md-6"><div class="card h-100"><div class="card-header border-l-session"><i class="fa-solid fa-chart-pie me-2"></i> Operacions (Sessió)</div><div class="card-body"><div id="sessionTradesChart" class="chart-pie"></div></div></div></div>
-                    <div class="col-md-6"><div class="card h-100"><div class="card-header border-l-global"><i class="fa-solid fa-chart-pie me-2"></i> Operacions (Global)</div><div class="card-body"><div id="globalTradesChart" class="chart-pie"></div></div></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-global h-100"><span class="stat-lbl">Beneficio Total</span><span id="dash-profit-total" class="stat-val">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-global h-100"><span class="stat-lbl">Operaciones Totales</span><span id="dash-trades-total" class="stat-val">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-global h-100"><span class="stat-lbl">Top Moneda Histórica</span><span id="dash-coin-total" class="stat-val">--</span></div></div>
+                    <div class="col-md-3"><div class="card p-3 border-l-global h-100"><span class="stat-lbl">Tiempo Total Absoluto</span><span id="dash-uptime-total" class="stat-val text-secondary">--</span></div></div>
                 </div>
 
                 <div class="row mb-4">
-                    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><i class="fa-solid fa-wallet me-2"></i> Distribució de la Cartera</div><div class="card-body"><div id="pieChart" class="chart-pie"></div></div></div></div>
-                    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><i class="fa-solid fa-list-check me-2"></i> Estratègies Actives</div><div class="card-body p-0"><ul id="config-list" class="list-group list-group-flush"></ul></div></div></div>
+                    <div class="col-lg-4">
+                        <div class="card h-100">
+                            <div class="card-header border-l-session"><i class="fa-solid fa-chart-pie me-2"></i> Operaciones (Sesión)</div>
+                            <div class="card-body"><div id="sessionTradesChart" class="chart-pie"></div></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="card h-100">
+                            <div class="card-header border-l-global"><i class="fa-solid fa-chart-pie me-2"></i> Operaciones (Global)</div>
+                            <div class="card-body"><div id="globalTradesChart" class="chart-pie"></div></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="card h-100">
+                            <div class="card-header"><i class="fa-solid fa-wallet me-2"></i> Distribución Cartera</div>
+                            <div class="card-body"><div id="pieChart" class="chart-pie"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card h-100">
+                            <div class="card-header"><i class="fa-solid fa-layer-group me-2"></i> Estrategias Activas y Rendimiento</div>
+                            <div class="card-body p-0 table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Par</th>
+                                            <th>Estado</th>
+                                            <th>Configuración (Grid)</th>
+                                            <th>Trades Totales</th>
+                                            <th>PnL Acumulado</th>
+                                            <th class="text-end">Detalles</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="strategies-table-body">
+                                        </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="row">
                     <div class="col-12">
                         <div class="card">
                             <div class="card-header bg-white text-dark border-bottom">
-                                <i class="fa-solid fa-list-ul me-2"></i> Ordres Actives (Tots els mercats)
+                                <i class="fa-solid fa-list-ul me-2"></i> Órdenes Activas (Todos los mercados)
                             </div>
                             <div class="card-body p-0 table-responsive" style="max-height: 400px;">
                                 <table class="table table-striped table-hover mb-0 align-middle">
                                     <thead class="table-light sticky-top">
                                         <tr>
-                                            <th>Parell</th>
-                                            <th>Tipus</th>
-                                            <th>Preu (USDC)</th>
-                                            <th>Quantitat</th>
-                                            <th class="text-end">Acció</th>
+                                            <th>Par</th>
+                                            <th>Tipo</th>
+                                            <th>Precio Orden</th>
+                                            <th>Precio Entrada</th>
+                                            <th>Precio Actual</th>
+                                            <th>PnL (Latente)</th>
+                                            <th>Valor ($)</th>
+                                            <th class="text-end">Acción</th>
                                         </tr>
                                     </thead>
                                     <tbody id="global-orders-table">
@@ -103,21 +180,90 @@
                     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"><span><i class="fa-solid fa-microchip me-2"></i> Sistema Global</span></div>
                     <div class="card-body">
                         <div class="row align-items-center">
-                            <div class="col-md-4"><label class="form-label">Cicle d'Actualització (Segons)</label><div class="input-group"><span class="input-group-text"><i class="fa-regular fa-clock"></i></span><input type="number" class="form-control" id="sys-cycle" min="1" max="60"></div><div class="form-text">Temps d'espera entre revisions del mercat.</div></div>
-                            <div class="col-md-8 text-end"><button class="btn btn-success btn-lg" onclick="saveConfigForm()"><i class="fa-solid fa-floppy-disk me-2"></i> GUARDAR CANVIS</button></div>
+                            <div class="col-md-4"><label class="form-label">Ciclo de Actualización (Segundos)</label><div class="input-group"><span class="input-group-text"><i class="fa-regular fa-clock"></i></span><input type="number" class="form-control" id="sys-cycle" min="1" max="60"></div><div class="form-text">Tiempo de espera entre revisiones del mercado.</div></div>
+                            <div class="col-md-8 text-end"><button class="btn btn-success btn-lg" onclick="saveConfigForm()"><i class="fa-solid fa-floppy-disk me-2"></i> GUARDAR CAMBIOS</button></div>
                         </div>
                     </div>
                 </div>
-                <h5 class="mb-3 text-muted border-bottom pb-2">Configuració per Moneda</h5>
+                <h5 class="mb-3 text-muted border-bottom pb-2">Configuración por Moneda</h5>
                 <div class="row" id="coins-config-container"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
             </div>
 
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
-    <script src="/static/js/main.js"></script>
+    <footer class="bg-dark text-light py-5 mt-5 border-top border-secondary">
+        <div class="container">
+            <div class="row justify-content-center">
+                <div class="col-lg-8 text-center">
+                    
+                    <h5 class="text-uppercase mb-3 fw-bold letter-spacing-1">Bot de Grid Trading</h5>
+                    
+                    <div class="d-flex justify-content-center gap-4 mt-4 mb-4">
+                        <a href="https://x.com" target="_blank" class="social-link" title="X (Twitter)">
+                            <i class="fa-brands fa-x-twitter"></i>
+                        </a>
+                        <a href="#" target="_blank" class="social-link" title="Telegram">
+                            <i class="fa-brands fa-telegram"></i>
+                        </a>
+                        <a href="https://github.com/catlinux/gridbot_binance" target="_blank" class="social-link" title="GitHub">
+                            <i class="fa-brands fa-github"></i>
+                        </a>
+                    </div>
 
+                    <div class="mb-4">
+                        <button class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#donationModal">
+                            <i class="fa-solid fa-heart me-2 text-danger"></i> Hacer una donación al proyecto
+                        </button>
+                    </div>
+
+                    <div class="disclaimer-box mx-auto">
+                        <p class="mb-2 text-center text-white"><i class="fa-solid fa-circle-exclamation me-2 text-warning"></i> <strong>AVISO LEGAL Y RESPONSABILIDAD</strong></p>
+                        <p class="mb-0">
+                            Este software es un proyecto desarrollado con <strong>fines exclusivamente educativos y de aprendizaje</strong>. El uso de herramientas de trading automático conlleva un alto riesgo de pérdida de capital.
+                            <strong>Marc Sancho</strong> no se hace responsable, directa ni indirectamente, de cualquier daño, pérdida financiera, lucro cesante o error de ejecución derivado del uso, configuración o fallo de este software.
+                            El usuario asume toda la responsabilidad de las operaciones realizadas. Se recomienda encarecidamente utilizar la red de prueba (<strong>Testnet</strong>) antes de operar con dinero real.
+                        </p>
+                    </div>
+
+                    <p class="small text-white-50 mb-0 mt-4">&copy; 2025 Marc Sancho. Open Source Project.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <div class="modal fade" id="donationModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-gift me-2 text-warning"></i> Apoyar el Proyecto</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <p class="mb-4">Si te gusta esta herramienta y quieres colaborar con su mantenimiento y mejora, puedes hacer una aportación a las siguientes direcciones crypto:</p>
+                    
+                    <div class="mb-3 text-start">
+                        <label class="fw-bold small text-muted">Solana (SOL):</label>
+                        <div class="crypto-addr mt-1">GbAFM55PyBb2otqUb1oTTtqzE39fwE6XS7HVsCCwX5Tw</div>
+                    </div>
+
+                    <div class="mb-3 text-start">
+                        <label class="fw-bold small text-muted">Polygon (MATIC):</label>
+                        <div class="crypto-addr mt-1">0x5dD9a7b2D831A319a68214C11015f64Dbc6bb79c</div>
+                    </div>
+
+                    <div class="alert alert-info small mt-4">
+                        <i class="fa-solid fa-info-circle me-1"></i> Asegúrate de elegir la red correcta para evitar errores.<br>No necesitamos un TAG.<br>Si haces la donación desde un exchange y te fuerza a poner uno, escribe 0.
+                    </div>
+                </div>
+                <div class="modal-footer justify-content-center">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/main.js"></script>
 </body>
 </html>

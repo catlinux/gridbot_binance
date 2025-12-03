@@ -21,5 +21,5 @@ gridbot_binance/
 │   │   └── index.html     # Estructura HTML base
 │   └── server.py          # API Backend (FastAPI)
 ├── main.py                # Punt d'entrada (Run)
-├── neteja.py              # Script d'utilitat per cancel·lar tot
+├── limpieza.py              # Script d'utilitat per cancel·lar tot
 └── requirements.txt       # Llibreries necessàries

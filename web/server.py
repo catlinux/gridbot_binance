@@ -20,7 +20,6 @@ if not os.path.exists(static_dir):
     os.makedirs(os.path.join(static_dir, "js"), exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 db = BotDatabase()
@@ -86,6 +85,21 @@ async def get_status():
     session_stats = db.get_stats(from_timestamp=session_start)
     session_uptime_str = format_uptime(time.time() - session_start)
 
+    strategies_data = []
+    per_coin_pnl = global_stats['per_coin_stats']['pnl']
+    per_coin_trades = global_stats['per_coin_stats']['trades']
+
+    for symbol in bot_instance.active_pairs:
+        strat_conf = bot_instance.pairs_map.get(symbol, {}).get('strategy', {})
+        strategies_data.append({
+            "symbol": symbol,
+            "grids": strat_conf.get('grids_quantity', '-'),
+            "amount": strat_conf.get('amount_per_grid', '-'),
+            "spread": strat_conf.get('grid_spread', '-'),
+            "total_trades": per_coin_trades.get(symbol, 0),
+            "total_pnl": round(per_coin_pnl.get(symbol, 0.0), 2)
+        })
+
     return {
         "status": "Running" if bot_instance.is_running else "Stopped",
         "active_pairs": bot_instance.active_pairs,
@@ -94,6 +108,7 @@ async def get_status():
         "portfolio_distribution": portfolio,
         "session_trades_distribution": session_stats['trades_distribution'],
         "global_trades_distribution": global_stats['trades_distribution'],
+        "strategies": strategies_data,
         "stats": {
             "session": {
                 "trades": session_stats['trades'],
@@ -110,14 +125,10 @@ async def get_status():
         }
     }
 
-# --- MODIFICAT: API ORDERS AMB CÀLCULS EXTRES ---
 @app.get("/api/orders")
 async def get_all_orders():
     raw_orders = db.get_all_active_orders()
-    
-    # Obtenim preus actuals per comparar
     prices = db.get_all_prices()
-    
     enhanced_orders = []
     
     for o in raw_orders:
@@ -126,35 +137,28 @@ async def get_all_orders():
         if current_price == 0 and bot_instance:
              current_price = bot_instance.connector.fetch_current_price(symbol)
 
-        # Càlculs extra
         o['current_price'] = current_price
-        o['total_value'] = o['amount'] * o['price'] # Valor al preu de l'ordre
-        
-        # Calcular preu d'entrada estimat (només per Vendes)
+        o['total_value'] = o['amount'] * o['price']
         o['entry_price'] = 0.0
         if o['side'] == 'sell' and bot_instance:
             try:
-                # Busquem el spread a la config del bot
                 strat = bot_instance.pairs_map.get(symbol, {}).get('strategy', bot_instance.config['default_strategy'])
                 spread = strat['grid_spread']
-                # Fórmula inversa: Si PreuVenda = PreuCompra * (1 + spread), llavors:
                 o['entry_price'] = o['price'] / (1 + (spread / 100.0))
             except: pass
-            
         enhanced_orders.append(o)
-        
     return enhanced_orders
 
 @app.post("/api/close_order")
 async def close_order_api(req: CloseOrderRequest):
     if not bot_instance:
-        raise HTTPException(status_code=503, detail="Bot no iniciat")
+        raise HTTPException(status_code=503, detail="Bot no iniciado")
     
     success = bot_instance.manual_close_order(req.symbol, req.order_id, req.side, req.amount)
     if success:
-        return {"status": "success", "message": "Ordre tancada i convertida a USDC."}
+        return {"status": "success", "message": "Orden cerrada y convertida a USDC correctamente."}
     else:
-        raise HTTPException(status_code=400, detail="Error tancant l'ordre.")
+        raise HTTPException(status_code=400, detail="Error cerrando la orden.")
 
 @app.get("/api/details/{symbol:path}")
 async def get_pair_details(symbol: str, timeframe: str = '15m'):
@@ -183,7 +187,7 @@ async def get_config():
     try:
         config_path = 'config/config.json5'
         if not os.path.exists(config_path):
-            raise HTTPException(status_code=404, detail="Arxiu no trobat")
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
         with open(config_path, 'r') as f:
             content = f.read()
         return {"content": content}
@@ -196,6 +200,6 @@ async def save_config(config: ConfigUpdate):
         json5.loads(config.content)
         with open('config/config.json5', 'w') as f:
             f.write(config.content)
-        return {"status": "success", "message": "Configuració guardada correctament."}
+        return {"status": "success", "message": "Configuración guardada correctamente."}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error de sintaxi JSON5: {e}")
+        raise HTTPException(status_code=400, detail=f"Error de sintaxis JSON5: {e}")

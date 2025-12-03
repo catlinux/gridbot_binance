@@ -12,75 +12,32 @@ class BotDatabase:
         self._init_db()
 
     def _get_conn(self):
-        """Crea una connexió nova (necessari per multithreading)."""
         return sqlite3.connect(DB_PATH, check_same_thread=False)
 
     def _init_db(self):
-        """Crea les taules si no existeixen."""
         conn = self._get_conn()
         cursor = conn.cursor()
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS market_data (
-                symbol TEXT PRIMARY KEY,
-                price REAL,
-                candles_json TEXT,
-                updated_at REAL
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS grid_status (
-                symbol TEXT PRIMARY KEY,
-                open_orders_json TEXT,
-                grid_levels_json TEXT,
-                updated_at REAL
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS trade_history (
-                id TEXT PRIMARY KEY,
-                symbol TEXT,
-                side TEXT,
-                price REAL,
-                amount REAL,
-                cost REAL,
-                timestamp REAL
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS bot_info (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        ''')
-        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS market_data (symbol TEXT PRIMARY KEY, price REAL, candles_json TEXT, updated_at REAL)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS grid_status (symbol TEXT PRIMARY KEY, open_orders_json TEXT, grid_levels_json TEXT, updated_at REAL)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS trade_history (id TEXT PRIMARY KEY, symbol TEXT, side TEXT, price REAL, amount REAL, cost REAL, timestamp REAL)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS bot_info (key TEXT PRIMARY KEY, value TEXT)''')
         cursor.execute("SELECT value FROM bot_info WHERE key='first_run'")
         if not cursor.fetchone():
             cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', str(time.time())))
-
         conn.commit()
         conn.close()
 
     def update_market_snapshot(self, symbol, price, candles):
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO market_data (symbol, price, candles_json, updated_at)
-            VALUES (?, ?, ?, ?)
-        ''', (symbol, price, json.dumps(candles), time.time()))
+        cursor.execute('''INSERT OR REPLACE INTO market_data (symbol, price, candles_json, updated_at) VALUES (?, ?, ?, ?)''', (symbol, price, json.dumps(candles), time.time()))
         conn.commit()
         conn.close()
 
     def update_grid_status(self, symbol, orders, levels):
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO grid_status (symbol, open_orders_json, grid_levels_json, updated_at)
-            VALUES (?, ?, ?, ?)
-        ''', (symbol, json.dumps(orders), json.dumps(levels), time.time()))
+        cursor.execute('''INSERT OR REPLACE INTO grid_status (symbol, open_orders_json, grid_levels_json, updated_at) VALUES (?, ?, ?, ?)''', (symbol, json.dumps(orders), json.dumps(levels), time.time()))
         conn.commit()
         conn.close()
 
@@ -90,10 +47,7 @@ class BotDatabase:
         cursor = conn.cursor()
         for t in trades:
             try:
-                cursor.execute('''
-                    INSERT OR IGNORE INTO trade_history (id, symbol, side, price, amount, cost, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (t['id'], t['symbol'], t['side'], t['price'], t['amount'], t['cost'], t['timestamp']))
+                cursor.execute('''INSERT OR IGNORE INTO trade_history (id, symbol, side, price, amount, cost, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)''', (t['id'], t['symbol'], t['side'], t['price'], t['amount'], t['cost'], t['timestamp']))
             except: pass
         conn.commit()
         conn.close()
@@ -102,18 +56,13 @@ class BotDatabase:
         conn = self._get_conn()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-
         cursor.execute("SELECT * FROM market_data WHERE symbol=?", (symbol,))
         market = cursor.fetchone()
-
         cursor.execute("SELECT * FROM grid_status WHERE symbol=?", (symbol,))
         grid = cursor.fetchone()
-
         cursor.execute("SELECT * FROM trade_history WHERE symbol=? ORDER BY timestamp DESC LIMIT 50", (symbol,))
         trades = cursor.fetchall()
-
         conn.close()
-
         return {
             "price": market['price'] if market else 0.0,
             "candles": json.loads(market['candles_json']) if market and market['candles_json'] else [],
@@ -171,11 +120,16 @@ class BotDatabase:
 
         trades_distribution = [{"name": k, "value": v} for k, v in trades_per_coin.items()]
 
+        # Retornem també les dades brutes per moneda per la taula d'estratègies
         return {
             "trades": total_trades,
             "profit": pnl,
             "best_coin": best_coin,
-            "trades_distribution": trades_distribution
+            "trades_distribution": trades_distribution,
+            "per_coin_stats": {
+                "pnl": pnl_per_coin,
+                "trades": trades_per_coin
+            }
         }
 
     def get_all_active_orders(self):
@@ -184,7 +138,6 @@ class BotDatabase:
         cursor.execute("SELECT symbol, open_orders_json FROM grid_status")
         rows = cursor.fetchall()
         conn.close()
-
         all_orders = []
         for symbol, orders_json in rows:
             if not orders_json: continue
@@ -194,5 +147,4 @@ class BotDatabase:
                     o['symbol'] = symbol
                     all_orders.append(o)
             except: pass
-        
         return all_orders

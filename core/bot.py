@@ -24,7 +24,7 @@ class GridBot:
         self.active_pairs = list(self.pairs_map.keys())
 
     def _data_collector_loop(self):
-        log.info("Iniciant col·lector de dades en segon pla...")
+        log.info("Iniciando colector de datos en segundo plano...")
         while self.is_running:
             current_pairs = list(self.active_pairs)
             for symbol in current_pairs:
@@ -51,7 +51,7 @@ class GridBot:
         params = self._get_params(symbol)
         quantity = params['grids_quantity']
         spread_percent = params['grid_spread'] / 100 
-        log.info(f"Calculant graella {symbol}. Spread: {params['grid_spread']}% | Nivells: {quantity}")
+        log.info(f"Calculando rejilla {symbol}. Spread: {params['grid_spread']}% | Niveles: {quantity}")
         levels = []
         for i in range(1, int(quantity / 2) + 1):
             levels.append(current_price * (1 - (spread_percent * i))) 
@@ -121,11 +121,11 @@ class GridBot:
                      try: amount = float(self.connector.exchange.amount_to_precision(symbol, balance))
                      except: pass
 
-            log.warning(f"[{symbol}] Creant ordre {target_side} @ {level_price}")
+            log.warning(f"[{symbol}] Creando orden {target_side} @ {level_price}")
             self.connector.place_order(symbol, target_side, amount, level_price)
 
     def _handle_smart_reload(self):
-        log.warning("🔄 CONFIGURACIÓ ACTUALITZADA: Analitzant canvis...")
+        log.warning("🔄 CONFIGURACIÓN ACTUALIZADA: Analizando cambios...")
         old_map = copy.deepcopy(self.pairs_map)
         self.config = self.connector.config
         self._refresh_pairs_map()
@@ -133,66 +133,50 @@ class GridBot:
         old_symbols = set(old_map.keys())
         removed = old_symbols - new_symbols
         for symbol in removed:
-            log.info(f"⛔ Aturant {symbol}. Cancel·lant ordres...")
+            log.info(f"⛔ Deteniendo {symbol}. Cancelando órdenes...")
             self.connector.cancel_all_orders(symbol)
             if symbol in self.levels: del self.levels[symbol]
             if symbol in self.reserved_inventory: del self.reserved_inventory[symbol.split('/')[0]]
         added = new_symbols - old_symbols
-        for symbol in added: log.success(f"✨ Activant {symbol}.")
+        for symbol in added: log.success(f"✨ Activando {symbol}.")
         kept = old_symbols & new_symbols
         for symbol in kept:
             old_strat = old_map[symbol].get('strategy')
             new_strat = self.pairs_map[symbol].get('strategy')
             if old_strat != new_strat:
-                log.warning(f"♻️ Canvi detectat a {symbol}. Reiniciant grid...")
+                log.warning(f"♻️ Cambio detectado en {symbol}. Reiniciando grid...")
                 base_asset = symbol.split('/')[0]
                 total_holding = self.connector.get_total_balance(base_asset)
                 if total_holding > 0:
                     self.reserved_inventory[base_asset] = total_holding
-                    log.info(f"🔒 {symbol}: Reservats {total_holding} {base_asset}.")
+                    log.info(f"🔒 {symbol}: Reservados {total_holding} {base_asset}.")
                 self.connector.cancel_all_orders(symbol)
                 if symbol in self.levels: del self.levels[symbol]
-        log.info("✅ Recàrrega intel·ligent completada.")
+        log.info("✅ Recarga inteligente completada.")
 
-    # --- NOVA FUNCIÓ: TANCAMENT MANUAL ---
     def manual_close_order(self, symbol, order_id, side, amount):
-        """
-        1. Cancel·la l'ordre.
-        2. Si era BUY: Ja tenim USDC. Fi.
-        3. Si era SELL: Tenim la moneda. Fem Market Sell per passar a USDC.
-        """
-        log.warning(f"MANUAL: Tancant ordre {order_id} ({side}) en {symbol}...")
-        
-        # 1. Cancel·lar
+        log.warning(f"MANUAL: Cerrando orden {order_id} ({side}) en {symbol}...")
         res = self.connector.cancel_order(order_id, symbol)
-        
-        # Si la cancel·lació falla, potser ja s'ha omplert.
-        # Però si retorna None o error, assumim que no podem continuar.
-        # CCXT retorna resposta o llença excepció. El wrapper torna None en error.
-        
         if side == 'buy':
-            log.success(f"Ordre {order_id} cancel·lada. USDC recuperats.")
+            log.success(f"Orden {order_id} cancelada. USDC recuperados.")
             return True
-        
         elif side == 'sell':
-            # Hem recuperat la crypto, ara la venem a mercat
-            # Esperem un moment per seguretat que el saldo s'actualitzi
             time.sleep(0.5)
             market_order = self.connector.place_market_sell(symbol, amount)
             if market_order:
-                log.success(f"Actiu venut a mercat (Market Sell) correctament.")
+                log.success(f"Activo vendido a mercado (Market Sell) correctamente.")
                 return True
             else:
-                log.error("No s'ha pogut executar el Market Sell.")
+                log.error("No se ha podido ejecutar el Market Sell.")
                 return False
 
     def start(self):
-        log.info("--- INICIANT GRIDBOT PROFESSIONAL ---")
+        log.info("--- INICIANDO GRIDBOT PROFESSIONAL ---")
         self.connector.validate_connection()
-        log.warning("Netejant ordres antigues inicials...")
+        log.warning("Limpiando órdenes antiguas iniciales...")
         for symbol in self.active_pairs:
             self.connector.cancel_all_orders(symbol)
-        log.info("Esperant 5 segons post-neteja...")
+        log.info("Esperando 5 segundos post-limpieza...")
         time.sleep(5)
         self.is_running = True
         data_thread = threading.Thread(target=self._data_collector_loop, daemon=True)
@@ -214,5 +198,5 @@ class GridBot:
     def _shutdown(self):
         self.is_running = False
         print()
-        log.warning("--- ATURANT GRIDBOT ---")
-        log.success("Bot aturat.")
+        log.warning("--- DETENIENDO GRIDBOT ---")
+        log.success("Bot detenido.")

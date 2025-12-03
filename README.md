@@ -1,159 +1,115 @@
 # ⚡ GridBot Pro - Binance Automated Trading
 
-![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.95+-green.svg)
-![SQLite](https://img.shields.io/badge/SQLite-Integrated-blue.svg)
-![Binance](https://img.shields.io/badge/Binance-Connect-yellow.svg)
-![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)
+![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-Moderno-green.svg)
+![SQLite](https://img.shields.io/badge/SQLite-Persistent-blue.svg)
+![Binance](https://img.shields.io/badge/Binance-Spot-yellow.svg)
 
-Un bot de trading automàtic d'alta freqüència basat en l'estratègia **Grid Trading Estàtic**. Dissenyat per a **Binance** (Spot), amb panell de control web en temps real, gestió d'errors robusta i capacitat de reconfiguració en calent.
-
-![Dashboard Preview](docs/screenshots/dashboard_preview.png)
-*(Pots afegir captures a una carpeta docs/screenshots)*
+Un bot de trading automático de alta frecuencia basado en la estrategia **Grid Trading Estático**. Diseñado para **Binance** (Spot), con panel de control web profesional, gestión manual de emergencia y persistencia de datos.
 
 ---
 
-## 🚀 Característiques Principals
+## 🚀 Características Principales
 
-### 🧠 Nucli Intel·ligent
-* **Grid Estàtic:** Utilitza línies de preu fixes per evitar el desplaçament (drift) i garantir compres baixes i vendes altes.
-* **Multi-Parell:** Opera simultàniament amb múltiples monedes (BTC, ETH, XRP, DOGE...) amb configuracions independents.
-* **Hot Reload 🔄:** Canvia la configuració (`config.json5`) sense aturar el bot. El sistema detecta els canvis i recalcula les graelles al vol.
-* **Protecció d'Inventari 🛡️:** Si reinicies l'estratègia, el bot "congela" les monedes comprades anteriorment per no vendre-les amb pèrdues.
+### 🧠 Núcleo y Estrategia
+* **Grid Estático Multi-Par:** Opera simultáneamente con múltiples monedas (BTC, ETH, SOL...) con configuraciones independientes.
+* **Persistencia SQLite:** Todas las operaciones se guardan en base de datos local. Nada se pierde si se reinicia el bot.
+* **Hot Reload 🔄:** Cambia la configuración (`config.json5`) sin detener el bot. El sistema detecta los cambios y recalcula las rejillas al vuelo.
+* **Smart Recovery 🛡️:** Si el bot se reinicia, recupera el estado anterior y protege el inventario comprado.
 
-### 🌐 Panell de Control Web
-* **Formulari de Configuració:** Modifica paràmetres (inversió, spread, rangs) directament des del navegador sense tocar fitxers de codi.
-* **Dashboard Professional:** Visió global del saldo, beneficis de sessió i estat del sistema.
-* **Gràfics en Temps Real:** Integració amb **Apache ECharts** per visualitzar espelmes i línies de grid.
-* **Timeframes Configurables:** Canvia la vista del gràfic (1m, 5m, 1h, 4h...) a l'instant.
-* **Dades Històriques:** Taules detallades d'ordres obertes i operacions completades.
-
-### ⚙️ Seguretat i Robustesa
-* **Tolerància a Fallades d'API:** Gestiona timeouts i errors de Binance sense penjar-se.
-* **Anti-Duplicats:** Lògica de *Fuzzy Matching* per evitar posar ordres repetides al mateix preu.
-* **Gestió de Comissions:** Ajusta automàticament les ordres de venda si el saldo és insuficient degut als *fees* de l'exchange.
-* **Base de Dades SQLite:** Emmagatzematge local eficient per no saturar l'API de Binance amb les peticions de la web.
+### 🌐 Panel de Control Web (Dashboard)
+* **Estadísticas Avanzadas:** Visualización separada de rendimiento de la **Sesión Actual** vs **Histórico Global**.
+* **Gestión Manual de Órdenes:** Tabla global de órdenes con cálculo de PnL en tiempo real y botón de **pánico (Vender a USDC)** para cerrar posiciones manualmente.
+* **Gráficos Interactivos:** Donuts de distribución de cartera y volumen de operaciones, más gráficos de velas (Candlestick) para cada moneda.
+* **Frontend Optimizado:** Código separado (HTML/CSS/JS) para una carga rápida y formato numérico europeo (comas para decimales).
+* **Configurador Visual:** Modifica parámetros (inversión, spread, rangos) directamente desde el navegador.
 
 ---
 
-## 🛠️ Instal·lació Ràpida
+## 🛠️ Instalación Rápida
 
-### 1. Requisits
+### 1. Requisitos
 * Python 3.10 o superior.
-* Un compte a Binance (es recomana usar la **Testnet** per proves).
+* Cuenta en Binance (Testnet recomendado para pruebas).
 
-### 2. Clonar i Preparar
+### 2. Clonar y Preparar
+Abre tu terminal y ejecuta:
+
 ```bash
-# Clonar el repositori
-git clone https://github.com/catlinux/gridbot_binance.git
+# Clonar el repositorio
+git clone [https://github.com/tu_usuario/gridbot_binance.git](https://github.com/tu_usuario/gridbot_binance.git)
 cd gridbot_binance
 
-# Crear entorn virtual
+# Crear entorno virtual
 python3 -m venv venv
-source venv/bin/activate  # A Linux/Mac
-# venv\Scripts\activate  # A Windows
+source venv/bin/activate  # En Linux/Mac
+# venv\Scripts\activate   # En Windows
 
-# Instal·lar dependències
+# Instalar dependencias
 pip install -r requirements.txt
 ```
 
-### 3. Configuració
-Crea l'arxiu de credencials basat en l'exemple:
+### 3. Configuración
+Crea el archivo de credenciales `.env` dentro de la carpeta `config/` basado en el ejemplo (o crea uno nuevo):
 
-```bash
-cp config/.env.example config/.env
-# Edita l'arxiu amb el teu editor preferit (nano, vim, code...)
-```
-
-Edita `config/.env` i afegeix les teves claus API:
 ```dotenv
-BINANCE_API_KEY=la_teva_api_key
-BINANCE_SECRET_KEY=el_teu_secret_key
-USE_TESTNET=True  # Canvia a False per diners reals
+BINANCE_API_KEY=tu_api_key_aqui
+BINANCE_SECRET_KEY=tu_secret_key_aqui
+USE_TESTNET=True  # True para dinero ficticio, False para dinero real
 ```
 
-### 4. Definir Estratègia
-Edita `config/config.json5` per definir quines monedes operar i com:
-
-```javascript
-"pairs": [
-  { 
-    "symbol": "BTC/USDC", 
-    "enabled": true,
-    "strategy": {
-      "grids_quantity": 20,   // Nombre de línies
-      "amount_per_grid": 150, // Inversió per línia
-      "grid_spread": 0.6      // % Distància entre línies
-    }
-  }
-]
-```
+Edita `config/config.json5` para definir tu estrategia inicial (pares, inversión, spread).
 
 ---
 
-## ▶️ Ús i Control
+## ▶️ Uso
 
 ### Iniciar el Sistema
-Aquesta comanda arrenca el motor de trading, el col·lector de dades i el servidor web.
+Ejecuta el comando principal. Esto iniciará el motor de trading y el servidor web.
 
 ```bash
 python main.py
 ```
 
-### Accés al Dashboard
-Obre el navegador i ves a:
+### Acceso al Dashboard
+Abre tu navegador y ve a:
 👉 **[http://localhost:8000](http://localhost:8000)**
 
-### Eines d'Utilitat
-Si necessites reiniciar de zero o netejar ordres "zombis" de la Testnet:
+### Herramientas Extra
+Si necesitas reiniciar de cero o limpiar órdenes "zombis" de pruebas anteriores:
 
-* **Neteja d'Ordres:** Cancel·la totes les ordres obertes i mostra un balanç del saldo total.
+* **Limpieza de Órdenes:** Cancela todas las órdenes abiertas de golpe y muestra un balance de la cartera.
   ```bash
-  python neteja.py
-  ```
-* **Liquidació Total:** Ven totes les criptomonedes a mercat per passar a USDC (Pànic/Reset).
-  ```bash
-  python vendre_tot.py
+  python limpieza.py
   ```
 
 ---
 
-## 📊 Guia d'Estratègia (Spread)
-
-El paràmetre `grid_spread` defineix la distància entre línies. Configura-ho segons la volatilitat de la moneda:
-
-| Spread (%) | Tipus | Recomanat per a... |
-| :--- | :--- | :--- |
-| **0.1% - 0.3%** | Scalping Agressiu | Stablecoins o mercats molt laterals. (Atenció als fees!) |
-| **0.5% - 0.8%** | Estàndard | BTC, ETH. Equilibri entre risc i benefici. |
-| **1.0% - 2.0%** | Swing / Volatilitat | Altcoins (SOL, BNB). Captura moviments més amplis. |
-| **> 2.5%** | Seguretat | "Memecoins" o mercats extremadament volàtils (DOGE, PEPE). |
-
----
-
-## 📂 Estructura del Projecte
+## 📂 Estructura del Código
 
 ```text
 gridbot_binance/
-├── config/             # Configuració (.env, config.json5)
-├── core/               # Nucli del sistema
-│   ├── bot.py          # Lògica Grid Estàtic i Smart Reload
-│   ├── exchange.py     # Connector CCXT
-│   └── database.py     # Gestió SQLite i Persistència
-├── web/                # Interfície d'Usuari
-│   ├── server.py       # API Backend (FastAPI)
-│   └── templates/      # Frontend (Bootstrap + ECharts + JS)
-├── main.py             # Punt d'entrada (Multiprocess)
-└── neteja.py           # Script d'utilitat
+├── config/             # Configuración (.env, config.json5)
+├── core/               # Lógica del Bot, Base de Datos y Conector Exchange
+├── web/                # Servidor Web
+│   ├── static/         # Frontend optimizado
+│   │   ├── css/        # Estilos
+│   │   └── js/         # Lógica visual (Gráficos, API calls)
+│   ├── templates/      # HTML (Interfaz)
+│   └── server.py       # API Backend (FastAPI)
+├── main.py             # Ejecutable principal
+├── limpieza.py           # Script de utilidad
+└── requirements.txt    # Librerías necesarias
 ```
 
 ---
 
-## ⚠️ Avís Legal (Disclaimer)
+## ⚠️ Disclaimer (Aviso Legal)
 
-Aquest programari és una eina d'automatització. El trading de criptomonedes comporta un risc significatiu de pèrdua de capital.
-* L'autor no es fa responsable de pèrdues financeres derivades de l'ús, configuració o errors del programari.
-* **Recomanació:** Prova sempre l'estratègia a la **Testnet** durant dies abans d'operar amb capital real.
+Este software es una herramienta de automatización experimental desarrollada con **fines educativos**. El trading de criptomonedas conlleva un riesgo significativo de pérdida de capital.
+
+* El autor no se hace responsable de posibles pérdidas financieras derivadas del uso, configuración o fallos del software.
+* **Recomendación:** Prueba siempre la estrategia en la **Testnet** durante varios días antes de operar con capital real.
 
 ---
-Desenvolupat amb ❤️ i Python.
+Desarrollado con ❤️ y Python.
