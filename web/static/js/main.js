@@ -6,7 +6,7 @@ let initialized = false;
 let currentTimeframe = '15m';
 let currentConfigObj = null; 
 
-// FORMATTERS (Usamos es-ES para formato numérico España)
+// FORMATTERS
 const fmtUSDC = (num) => { 
     if (num === undefined || num === null) return '--'; 
     return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); 
@@ -271,7 +271,8 @@ async function loadSymbol(symbol) {
         const data = await res.json();
         
         document.getElementById(`price-${safe}`).innerText = `${fmtUSDC(data.price)} USDC`;
-        renderCandleChart(safe, data.chart_data, data.grid_lines);
+        
+        renderCandleChart(safe, data.chart_data, data.grid_lines, data.open_orders);
         
         const buys = data.open_orders.filter(o => o.side === 'buy').sort((a,b) => b.price - a.price);
         const sells = data.open_orders.filter(o => o.side === 'sell').sort((a,b) => a.price - b.price);
@@ -286,16 +287,84 @@ async function loadSymbol(symbol) {
     } catch(e) { console.error(e); }
 }
 
-function renderCandleChart(safeSym, data, gridLines) {
+// --- CONFIGURACIÓ VISUAL DE LÍNIES ---
+function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     const dom = document.getElementById(`chart-${safeSym}`);
     if(!dom) return;
     if (!data || data.length === 0) return;
-    const currentPrice = data[data.length - 1][4]; 
-    const validData = data.filter(d => d[4] > currentPrice * 0.5);
+    
     let chart = echarts.getInstanceByDom(dom);
     if (!chart) chart = echarts.init(dom);
-    const markLines = gridLines.map(p => ({ yAxis: p, lineStyle: { color: '#9ca3af', type: 'dashed', opacity: 0.5 } }));
-    const option = { animation: false, grid: { left: 10, right: 60, top: 10, bottom: 20, containLabel: true }, tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } }, xAxis: { type: 'category', data: validData.map(i => i[0]), scale: true, boundaryGap: true, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false } }, yAxis: { scale: true, position: 'right', splitLine: { show: true, lineStyle: { color: '#f3f4f6' } } }, dataZoom: [{ type: 'inside', start: 60, end: 100 }], series: [{ type: 'candlestick', data: validData.map(i => [i[1], i[2], i[3], i[4]]), itemStyle: { color: '#0ecb81', color0: '#f6465d', borderColor: '#0ecb81', borderColor0: '#f6465d' }, markLine: { symbol: 'none', data: markLines, label: { show: false }, silent: true } }] };
+
+    const gridMarkLines = gridLines.map(p => ({
+        yAxis: p,
+        lineStyle: { color: '#e5e7eb', type: 'dotted', width: 1 },
+        label: { show: false },
+        silent: true
+    }));
+
+    const orderMarkLines = activeOrders.map(o => ({
+        yAxis: o.price,
+        lineStyle: {
+            color: o.side === 'buy' ? '#0ecb81' : '#f6465d',
+            type: 'solid',
+            width: 1.5
+        },
+        label: {
+            show: true,
+            // AQUI ESTÀ EL CANVI: 'insideEnd' + 'bottom' fa que el text floti SOBRE la línia
+            position: 'insideEnd', 
+            verticalAlign: 'bottom', 
+            formatter: o.side === 'buy' ? 'COMPRA' : 'VENTA',
+            color: o.side === 'buy' ? '#0ecb81' : '#f6465d',
+            fontSize: 9, // Font una mica més petita per estètica
+            fontWeight: 'bold',
+            padding: [0, 0, 2, 0] // Petit marge inferior per separar-lo de la línia
+        }
+    }));
+
+    const allMarkLines = [...gridMarkLines, ...orderMarkLines];
+
+    const currentPrice = data[data.length - 1][4]; 
+    const validData = data.filter(d => d[4] > currentPrice * 0.5);
+
+    const option = { 
+        animation: false, 
+        // AUGMENTEM EL MARGE DRET (right: 75) perquè els preus no es mengin el gràfic
+        grid: { left: 10, right: 75, top: 10, bottom: 20, containLabel: true }, 
+        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } }, 
+        xAxis: { 
+            type: 'category', 
+            data: validData.map(i => i[0]), 
+            scale: true, 
+            boundaryGap: true, 
+            axisLine: { show: false }, 
+            axisTick: { show: false }, 
+            axisLabel: { show: false } 
+        }, 
+        yAxis: { 
+            scale: true, 
+            position: 'right', 
+            splitLine: { show: true, lineStyle: { color: '#f3f4f6' } } 
+        }, 
+        dataZoom: [{ type: 'inside', start: 60, end: 100 }], 
+        series: [{ 
+            type: 'candlestick', 
+            data: validData.map(i => [i[1], i[2], i[3], i[4]]), 
+            itemStyle: { 
+                color: '#0ecb81', 
+                color0: '#f6465d', 
+                borderColor: '#0ecb81', 
+                borderColor0: '#f6465d' 
+            }, 
+            markLine: { 
+                symbol: 'none', 
+                data: allMarkLines, 
+                silent: true 
+            } 
+        }] 
+    };
+    
     chart.setOption(option);
 }
 
