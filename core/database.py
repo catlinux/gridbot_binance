@@ -20,7 +20,6 @@ class BotDatabase:
         conn = self._get_conn()
         cursor = conn.cursor()
         
-        # Taula 1: Dades de Mercat
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS market_data (
                 symbol TEXT PRIMARY KEY,
@@ -30,7 +29,6 @@ class BotDatabase:
             )
         ''')
 
-        # Taula 2: Estat del Grid
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS grid_status (
                 symbol TEXT PRIMARY KEY,
@@ -40,7 +38,6 @@ class BotDatabase:
             )
         ''')
 
-        # Taula 3: Històric de Trades
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS trade_history (
                 id TEXT PRIMARY KEY,
@@ -53,7 +50,6 @@ class BotDatabase:
             )
         ''')
 
-        # Taula 4: Metadades del sistema
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS bot_info (
                 key TEXT PRIMARY KEY,
@@ -79,7 +75,6 @@ class BotDatabase:
         conn.close()
 
     def update_grid_status(self, symbol, orders, levels):
-        """Nota: Hem tret l'argument 'stats' perquè ja no el guardem aquí."""
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute('''
@@ -102,8 +97,6 @@ class BotDatabase:
             except: pass
         conn.commit()
         conn.close()
-
-    # --- MÈTODES DE LECTURA ---
 
     def get_pair_data(self, symbol):
         conn = self._get_conn()
@@ -147,19 +140,10 @@ class BotDatabase:
         return time.time()
 
     def get_stats(self, from_timestamp=0):
-        """
-        Calcula estadístiques filtrant per data.
-        Si from_timestamp == 0 -> Global.
-        Si from_timestamp > 0 -> Sessió actual.
-        """
         conn = self._get_conn()
         cursor = conn.cursor()
-        
-        # Filtrem per temps
-        query = "SELECT symbol, side, cost FROM trade_history WHERE timestamp >= ?"
-        cursor.execute(query, (from_timestamp * 1000,)) # Binance usa milisegons
+        cursor.execute("SELECT symbol, side, cost FROM trade_history WHERE timestamp >= ?", (from_timestamp * 1000,))
         rows = cursor.fetchall()
-        
         conn.close()
 
         total_trades = len(rows)
@@ -168,18 +152,15 @@ class BotDatabase:
         trades_per_coin = {} 
 
         for symbol, side, cost in rows:
-            # 1. PnL
             val = cost if side == 'sell' else -cost
             pnl += val
             
             if symbol not in pnl_per_coin: pnl_per_coin[symbol] = 0.0
             pnl_per_coin[symbol] += val
 
-            # 2. Comptador Trades
             if symbol not in trades_per_coin: trades_per_coin[symbol] = 0
             trades_per_coin[symbol] += 1
 
-        # Millor moneda
         best_coin = "-"
         highest_pnl = -99999999.0
         for sym, val in pnl_per_coin.items():
@@ -188,7 +169,6 @@ class BotDatabase:
                 best_coin = sym
         if highest_pnl <= 0: best_coin = "-"
 
-        # Format gràfic ECharts
         trades_distribution = [{"name": k, "value": v} for k, v in trades_per_coin.items()]
 
         return {
@@ -197,3 +177,22 @@ class BotDatabase:
             "best_coin": best_coin,
             "trades_distribution": trades_distribution
         }
+
+    def get_all_active_orders(self):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT symbol, open_orders_json FROM grid_status")
+        rows = cursor.fetchall()
+        conn.close()
+
+        all_orders = []
+        for symbol, orders_json in rows:
+            if not orders_json: continue
+            try:
+                orders = json.loads(orders_json)
+                for o in orders:
+                    o['symbol'] = symbol
+                    all_orders.append(o)
+            except: pass
+        
+        return all_orders

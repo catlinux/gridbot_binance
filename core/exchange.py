@@ -81,7 +81,6 @@ class BinanceConnector:
             return False
 
     def get_asset_balance(self, asset):
-        """Retorna el saldo LLIURE (disponible per operar)."""
         try:
             balance = self.exchange.fetch_balance()
             return balance.get(asset, {}).get('free', 0.0)
@@ -89,16 +88,13 @@ class BinanceConnector:
             log.error(f"Error obtenint saldo de {asset}: {e}")
             return 0.0
 
-    # --- NOVA FUNCIÓ ---
     def get_total_balance(self, asset):
-        """Retorna el saldo TOTAL (Lliure + Bloquejat en ordres)."""
         try:
             balance = self.exchange.fetch_balance()
             return balance.get(asset, {}).get('total', 0.0)
         except Exception as e:
             log.error(f"Error obtenint saldo TOTAL de {asset}: {e}")
             return 0.0
-    # -------------------
 
     def fetch_current_price(self, symbol):
         try:
@@ -119,6 +115,22 @@ class BinanceConnector:
              return None
         except Exception as e:
             log.error(f"Error col·locant ordre: {e}")
+            return None
+
+    # --- NOVA FUNCIÓ PER VENDRE A MERCAT ---
+    def place_market_sell(self, symbol, amount):
+        try:
+            log.warning(f"Executant Venda a Mercat {symbol} Quantitat: {amount}")
+            return self.exchange.create_order(symbol, 'market', 'sell', amount)
+        except Exception as e:
+            log.error(f"Error en Market Sell: {e}")
+            return None
+
+    def cancel_order(self, order_id, symbol):
+        try:
+            return self.exchange.cancel_order(order_id, symbol)
+        except Exception as e:
+            log.error(f"Error cancel·lant ordre {order_id}: {e}")
             return None
 
     def cancel_all_orders(self, symbol):

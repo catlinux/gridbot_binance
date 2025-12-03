@@ -5,58 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GridBot Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="/static/css/style.css">
+    
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="https://unpkg.com/json5@2/dist/index.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body { background-color: #f3f4f6; color: #1f2937; font-family: 'Segoe UI', system-ui, sans-serif; padding-bottom: 60px; }
-        .navbar { background: #1e293b; }
-        .nav-tabs .nav-link { color: #64748b; background: #e2e8f0; margin-right: 2px; border: none; font-weight: 600; }
-        .nav-link.active { color: #0f172a; background: #fff; border-top: 3px solid #3b82f6; }
-        .tab-content { background: white; padding: 25px; border-radius: 0 0 12px 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        .card { border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .card-header { background: #fff; border-bottom: 1px solid #e5e7eb; font-weight: 700; color: #374151; padding: 1rem; }
-        .text-buy { color: #0ecb81; } .text-sell { color: #f6465d; }
-        .bg-buy { background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
-        .bg-sell { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-        .chart-container { height: 450px; width: 100%; }
-        
-        /* Gràfics de pastís grans */
-        .chart-pie { height: 400px; width: 100%; }
-        
-        .stat-val { font-size: 1.5rem; font-weight: 800; display: block; }
-        .stat-lbl { font-size: 0.75rem; text-transform: uppercase; color: #6b7280; font-weight: 600; }
-        
-        /* Bordes laterals */
-        .border-l-session { border-left: 4px solid #3b82f6; } 
-        .border-l-global { border-left: 4px solid #4b5563; } 
-
-        .tf-btn { font-size: 0.75rem; padding: 2px 8px; margin-left: 2px; }
-        .tf-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
-        
-        .form-label { font-weight: 600; font-size: 0.85rem; color: #4b5563; }
-        .coin-card { transition: all 0.2s; }
-        .coin-card:hover { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-color: #cbd5e1; }
-        .coin-disabled { opacity: 0.6; background-color: #f9fafb; }
-        .input-group-text { font-size: 0.85rem; background-color: #f3f4f6; }
-        
-        #config-editor {
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 14px;
-            background-color: #1e1e1e;
-            color: #d4d4d4;
-            border: 1px solid #333;
-            border-radius: 6px;
-            padding: 15px;
-            width: 100%;
-            height: 600px;
-            resize: vertical;
-            white-space: pre;
-            tab-size: 2;
-        }
-        #config-msg { display: none; margin-top: 10px; }
-        .section-title { font-size: 0.85rem; color: #9ca3af; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
-    </style>
 </head>
 <body>
 
@@ -107,38 +61,35 @@
                 </div>
 
                 <div class="row mb-4">
-                    <div class="col-md-6">
-                        <div class="card h-100">
-                            <div class="card-header border-l-session"><i class="fa-solid fa-chart-pie me-2"></i> Operacions per Moneda (Sessió)</div>
-                            <div class="card-body">
-                                <div id="sessionTradesChart" class="chart-pie"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="card h-100">
-                            <div class="card-header border-l-global"><i class="fa-solid fa-chart-pie me-2"></i> Operacions per Moneda (Global)</div>
-                            <div class="card-body">
-                                <div id="globalTradesChart" class="chart-pie"></div>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="col-md-6"><div class="card h-100"><div class="card-header border-l-session"><i class="fa-solid fa-chart-pie me-2"></i> Operacions (Sessió)</div><div class="card-body"><div id="sessionTradesChart" class="chart-pie"></div></div></div></div>
+                    <div class="col-md-6"><div class="card h-100"><div class="card-header border-l-global"><i class="fa-solid fa-chart-pie me-2"></i> Operacions (Global)</div><div class="card-body"><div id="globalTradesChart" class="chart-pie"></div></div></div></div>
+                </div>
+
+                <div class="row mb-4">
+                    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><i class="fa-solid fa-wallet me-2"></i> Distribució de la Cartera</div><div class="card-body"><div id="pieChart" class="chart-pie"></div></div></div></div>
+                    <div class="col-lg-6"><div class="card h-100"><div class="card-header"><i class="fa-solid fa-list-check me-2"></i> Estratègies Actives</div><div class="card-body p-0"><ul id="config-list" class="list-group list-group-flush"></ul></div></div></div>
                 </div>
 
                 <div class="row">
-                    <div class="col-lg-6">
-                        <div class="card h-100">
-                            <div class="card-header"><i class="fa-solid fa-wallet me-2"></i> Distribució de la Cartera</div>
-                            <div class="card-body">
-                                <div id="pieChart" class="chart-pie"></div>
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header bg-white text-dark border-bottom">
+                                <i class="fa-solid fa-list-ul me-2"></i> Ordres Actives (Tots els mercats)
                             </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-6">
-                        <div class="card h-100">
-                            <div class="card-header"><i class="fa-solid fa-list-check me-2"></i> Estratègies Actives</div>
-                            <div class="card-body p-0">
-                                <ul id="config-list" class="list-group list-group-flush"></ul>
+                            <div class="card-body p-0 table-responsive" style="max-height: 400px;">
+                                <table class="table table-striped table-hover mb-0 align-middle">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th>Parell</th>
+                                            <th>Tipus</th>
+                                            <th>Preu (USDC)</th>
+                                            <th>Quantitat</th>
+                                            <th class="text-end">Acció</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="global-orders-table">
+                                        </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -149,367 +100,24 @@
             <div class="tab-pane fade" id="content-config" role="tabpanel">
                 <div id="config-alert" class="alert alert-info" style="display:none"></div>
                 <div class="card mb-4 border-primary">
-                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                        <span><i class="fa-solid fa-microchip me-2"></i> Sistema Global</span>
-                    </div>
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"><span><i class="fa-solid fa-microchip me-2"></i> Sistema Global</span></div>
                     <div class="card-body">
                         <div class="row align-items-center">
-                            <div class="col-md-4">
-                                <label class="form-label">Cicle d'Actualització (Segons)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text"><i class="fa-regular fa-clock"></i></span>
-                                    <input type="number" class="form-control" id="sys-cycle" min="1" max="60">
-                                </div>
-                                <div class="form-text">Temps d'espera entre revisions del mercat.</div>
-                            </div>
-                            <div class="col-md-8 text-end">
-                                <button class="btn btn-success btn-lg" onclick="saveConfigForm()"><i class="fa-solid fa-floppy-disk me-2"></i> GUARDAR CANVIS</button>
-                            </div>
+                            <div class="col-md-4"><label class="form-label">Cicle d'Actualització (Segons)</label><div class="input-group"><span class="input-group-text"><i class="fa-regular fa-clock"></i></span><input type="number" class="form-control" id="sys-cycle" min="1" max="60"></div><div class="form-text">Temps d'espera entre revisions del mercat.</div></div>
+                            <div class="col-md-8 text-end"><button class="btn btn-success btn-lg" onclick="saveConfigForm()"><i class="fa-solid fa-floppy-disk me-2"></i> GUARDAR CANVIS</button></div>
                         </div>
                     </div>
                 </div>
                 <h5 class="mb-3 text-muted border-bottom pb-2">Configuració per Moneda</h5>
-                <div class="row" id="coins-config-container">
-                    <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
-                </div>
+                <div class="row" id="coins-config-container"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
             </div>
 
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        let currentMode = 'home';
-        let charts = {};
-        let initialized = false;
-        let currentTimeframe = '15m';
-        let currentConfigObj = null; 
+    
+    <script src="/static/js/main.js"></script>
 
-        // --- FUNCIONS DE FORMAT (Local ca-ES: Milers amb punt, Decimals amb coma) ---
-        
-        // 1. Per a USDC/Dòlars: Sempre 2 decimals
-        const fmtUSDC = (num) => {
-            if (num === undefined || num === null) return '--';
-            return parseFloat(num).toLocaleString('ca-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        };
-
-        // 2. Per a Comptadors (Sencers): Sense decimals, punt de miler
-        const fmtInt = (num) => {
-            if (num === undefined || num === null) return '--';
-            return parseInt(num).toLocaleString('ca-ES');
-        };
-
-        // 3. Per a Crypto (Preus/Quantitats): Decimals variables, però amb coma
-        const fmtCrypto = (num) => {
-            if (!num) return '-';
-            // Convertim a string i canviem el punt per coma manualment per no perdre precisió
-            return num.toString().replace('.', ',');
-        };
-
-        function setMode(mode) {
-            currentMode = mode;
-            if (mode === 'home') loadHome();
-            else if (mode !== 'config') loadSymbol(mode);
-            
-            if (mode !== 'home' && mode !== 'config') {
-                setTimeout(() => {
-                    const safe = mode.replace('/', '_');
-                    if (charts[safe]) charts[safe].resize();
-                }, 200);
-            }
-        }
-
-        // --- CONFIG ---
-        async function loadConfigForm() {
-            try {
-                const res = await fetch('/api/config');
-                const data = await res.json();
-                currentConfigObj = JSON5.parse(data.content);
-                document.getElementById('sys-cycle').value = currentConfigObj.system.cycle_delay;
-                const container = document.getElementById('coins-config-container');
-                container.innerHTML = '';
-                currentConfigObj.pairs.forEach((pair, index) => {
-                    const strategy = pair.strategy || currentConfigObj.default_strategy;
-                    const isEnabled = pair.enabled;
-                    const cardClass = isEnabled ? '' : 'coin-disabled';
-                    const checked = isEnabled ? 'checked' : '';
-                    const html = `
-                        <div class="col-md-6 col-xl-4 mb-4">
-                            <div class="card h-100 coin-card ${cardClass}" id="card-pair-${index}">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    <span class="fw-bold fs-5">${pair.symbol}</span>
-                                    <div class="form-check form-switch">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="enable-${index}" ${checked} onchange="toggleCard(${index})">
-                                        <label class="form-check-label fw-bold" for="enable-${index}">${isEnabled ? 'ON' : 'OFF'}</label>
-                                    </div>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-3">
-                                        <label class="form-label">Inversió per Línia (USDC)</label>
-                                        <div class="input-group">
-                                            <span class="input-group-text">$</span>
-                                            <input type="number" class="form-control" id="amount-${index}" value="${strategy.amount_per_grid}">
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-6 mb-3">
-                                            <label class="form-label">Nº Línies</label>
-                                            <input type="number" class="form-control" id="qty-${index}" value="${strategy.grids_quantity}">
-                                        </div>
-                                        <div class="col-6 mb-3">
-                                            <label class="form-label">Spread (%)</label>
-                                            <div class="input-group">
-                                                <input type="number" class="form-control" id="spread-${index}" value="${strategy.grid_spread}" step="0.1">
-                                                <span class="input-group-text">%</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>`;
-                    container.innerHTML += html;
-                });
-            } catch (e) { console.error(e); alert("Error llegint la configuració."); }
-        }
-
-        function toggleCard(index) {
-            const checkbox = document.getElementById(`enable-${index}`);
-            const card = document.getElementById(`card-pair-${index}`);
-            const label = checkbox.nextElementSibling;
-            if (checkbox.checked) { card.classList.remove('coin-disabled'); label.innerText = 'ON'; } 
-            else { card.classList.add('coin-disabled'); label.innerText = 'OFF'; }
-        }
-
-        async function saveConfigForm() {
-            if (!currentConfigObj) return;
-            currentConfigObj.system.cycle_delay = parseInt(document.getElementById('sys-cycle').value);
-            currentConfigObj.pairs.forEach((pair, index) => {
-                const isEnabled = document.getElementById(`enable-${index}`).checked;
-                const amount = parseFloat(document.getElementById(`amount-${index}`).value);
-                const qty = parseInt(document.getElementById(`qty-${index}`).value);
-                const spread = parseFloat(document.getElementById(`spread-${index}`).value);
-                pair.enabled = isEnabled;
-                if (!pair.strategy) pair.strategy = {};
-                pair.strategy.amount_per_grid = amount;
-                pair.strategy.grids_quantity = qty;
-                pair.strategy.grid_spread = spread;
-            });
-            const jsonString = JSON.stringify(currentConfigObj, null, 2);
-            const msgBox = document.getElementById('config-alert');
-            try {
-                const res = await fetch('/api/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: jsonString })
-                });
-                const data = await res.json();
-                msgBox.style.display = 'block';
-                if (res.ok) {
-                    msgBox.className = 'alert alert-success';
-                    msgBox.innerHTML = '<i class="fa-solid fa-check-circle"></i> Configuració guardada! Recarregant...';
-                    setTimeout(() => { location.reload(); }, 1500);
-                } else {
-                    msgBox.className = 'alert alert-danger';
-                    msgBox.innerText = 'Error: ' + data.detail;
-                }
-            } catch (e) { alert("Error de connexió al guardar."); }
-        }
-
-        function setTimeframe(tf) {
-            currentTimeframe = tf;
-            document.querySelectorAll('.tf-btn').forEach(btn => {
-                btn.classList.remove('active');
-                if(btn.innerText.toLowerCase() === tf) btn.classList.add('active');
-            });
-            if (currentMode !== 'home' && currentMode !== 'config') loadSymbol(currentMode);
-        }
-        
-        // Funció Helper per pintar els Dònuts
-        function renderDonut(domId, data, isCurrency = false) {
-            const dom = document.getElementById(domId);
-            if (!dom) return;
-            const chart = echarts.getInstanceByDom(dom) || echarts.init(dom);
-            const chartData = (data && data.length > 0) ? data : [{value: 0, name: 'Sense Dades'}];
-            
-            chart.setOption({ 
-                tooltip: { 
-                    trigger: 'item', 
-                    // Usem el formatter per posar decimals correctes al tooltip
-                    formatter: function(params) {
-                         const val = isCurrency ? fmtUSDC(params.value) : fmtInt(params.value);
-                         return `${params.name}: ${val} (${params.percent}%)`;
-                    }
-                }, 
-                legend: { 
-                    orient: 'vertical', 
-                    left: '5%',
-                    top: 'center',
-                    itemGap: 15,
-                    textStyle: { color: '#6b7280' }
-                }, 
-                series: [{ 
-                    type: 'pie', 
-                    radius: ['40%', '85%'], 
-                    center: ['60%', '50%'],
-                    label: { show: false, position: 'center' },
-                    emphasis: { label: { show: true, fontSize: 18, fontWeight: 'bold' } },
-                    data: chartData
-                }] 
-            });
-        }
-
-        async function init() {
-            try {
-                const res = await fetch('/api/status');
-                if (!res.ok) return;
-                const data = await res.json();
-                const tabList = document.getElementById('mainTabs');
-                const tabContent = document.getElementById('mainTabsContent');
-
-                if (!initialized && data.active_pairs.length > 0) {
-                    data.active_pairs.forEach(sym => {
-                        const safe = sym.replace('/', '_');
-                        const li = document.createElement('li');
-                        li.className = 'nav-item';
-                        li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${sym}')">${sym}</button>`;
-                        tabList.appendChild(li);
-
-                        const div = document.createElement('div');
-                        div.className = 'tab-pane fade';
-                        div.id = `content-${safe}`;
-                        div.innerHTML = `
-                            <div class="row">
-                                <div class="col-lg-8 mb-3">
-                                    <div class="card h-100">
-                                        <div class="card-header d-flex justify-content-between align-items-center">
-                                            <div class="d-flex align-items-center">
-                                                <span>Gràfic Preu</span>
-                                                <div class="btn-group ms-3" role="group">
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1m')">1m</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('5m')">5m</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn active" onclick="setTimeframe('15m')">15m</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1h')">1h</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('4h')">4h</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1d')">1d</button>
-                                                    <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1w')">1w</button>
-                                                </div>
-                                            </div>
-                                            <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
-                                        </div>
-                                        <div class="card-body p-1"><div id="chart-${safe}" class="chart-container"></div></div>
-                                    </div>
-                                </div>
-                                <div class="col-lg-4 mb-3"><div class="card h-100"><div class="card-header">Estat del Grid</div><div class="card-body"><div class="row g-2 text-center mb-4"><div class="col-6"><div class="bg-buy p-3 rounded"><small class="d-block fw-bold mb-1">COMPRES</small><b class="fs-3" id="count-buy-${safe}">0</b></div></div><div class="col-6"><div class="bg-sell p-3 rounded"><small class="d-block fw-bold mb-1">VENDES</small><b class="fs-3" id="count-sell-${safe}">0</b></div></div></div><ul class="list-group list-group-flush"><li class="list-group-item d-flex justify-content-between"><span>Pròx. Compra</span><b class="text-buy" id="next-buy-${safe}">--</b></li><li class="list-group-item d-flex justify-content-between"><span>Pròx. Venda</span><b class="text-sell" id="next-sell-${safe}">--</b></li></ul></div></div></div>
-                            </div>
-                            <div class="row">
-                                <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Ordres Actives</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-striped mb-0"><thead class="table-light"><tr><th>Tipus</th><th>Preu</th><th>Volum</th></tr></thead><tbody id="orders-${safe}"></tbody></table></div></div></div>
-                                <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Històric d'Operacions</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>Hora</th><th>Op</th><th>Preu</th><th>Total (USDC)</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div></div></div>
-                            </div>`;
-                        tabContent.appendChild(div);
-                    });
-                    initialized = true;
-                }
-                loadHome();
-            } catch (e) { console.error("Error init:", e); }
-        }
-
-        async function loadHome() {
-            try {
-                const res = await fetch('/api/status');
-                const data = await res.json();
-                
-                // --- CAPÇALERA ---
-                document.getElementById('status-badge').innerText = data.status === 'Running' ? 'OPERATIU' : 'ATURAT';
-                document.getElementById('status-badge').className = data.status === 'Running' ? 'badge bg-success' : 'badge bg-danger';
-                document.getElementById('total-balance').innerText = `${fmtUSDC(data.total_usdc_value)} USDC`;
-
-                // --- DADES DE SESSIÓ ---
-                document.getElementById('dash-profit-session').innerText = `${fmtUSDC(data.stats.session.profit)} $`;
-                document.getElementById('dash-trades-session').innerText = fmtInt(data.stats.session.trades);
-                document.getElementById('dash-coin-session').innerText = data.stats.session.best_coin;
-                document.getElementById('dash-uptime-session').innerText = data.stats.session.uptime;
-
-                // --- DADES GLOBALS ---
-                document.getElementById('dash-profit-total').innerText = `${fmtUSDC(data.stats.global.profit)} $`;
-                document.getElementById('dash-trades-total').innerText = fmtInt(data.stats.global.trades);
-                document.getElementById('dash-coin-total').innerText = data.stats.global.best_coin;
-                document.getElementById('dash-uptime-total').innerText = data.stats.global.uptime;
-
-                // 1. Gràfic Distribució de Cartera (Saldo) -> Format Money (isCurrency=true)
-                renderDonut('pieChart', data.portfolio_distribution, true);
-                
-                // 2. Gràfic Operacions SESSIÓ -> Format Int (isCurrency=false)
-                renderDonut('sessionTradesChart', data.session_trades_distribution, false);
-
-                // 3. Gràfic Operacions GLOBAL -> Format Int (isCurrency=false)
-                renderDonut('globalTradesChart', data.global_trades_distribution, false);
-                
-                // Llista
-                document.getElementById('config-list').innerHTML = data.active_pairs.map(p => 
-                    `<li class="list-group-item d-flex justify-content-between"><span>${p}</span> <span class="badge bg-success bg-opacity-25 text-success">Actiu</span></li>`
-                ).join('');
-
-            } catch(e) { console.error(e); }
-        }
-
-        async function loadSymbol(symbol) {
-            const safe = symbol.replace('/', '_');
-            try {
-                const res = await fetch(`/api/details/${symbol}?timeframe=${currentTimeframe}`);
-                if (!res.ok) return;
-                const data = await res.json();
-                
-                // Preu Actual (en USDC) -> Format Money
-                document.getElementById(`price-${safe}`).innerText = `${fmtUSDC(data.price)} USDC`;
-                
-                renderCandleChart(safe, data.chart_data, data.grid_lines);
-                
-                const buys = data.open_orders.filter(o => o.side === 'buy').sort((a,b) => b.price - a.price);
-                const sells = data.open_orders.filter(o => o.side === 'sell').sort((a,b) => a.price - b.price);
-                document.getElementById(`count-buy-${safe}`).innerText = buys.length;
-                document.getElementById(`count-sell-${safe}`).innerText = sells.length;
-                
-                // Preus pròximes ordres -> Format Crypto (decimals)
-                document.getElementById(`next-buy-${safe}`).innerText = buys.length ? fmtCrypto(parseFloat(buys[0].price).toFixed(4)) : '-';
-                document.getElementById(`next-sell-${safe}`).innerText = sells.length ? fmtCrypto(parseFloat(sells[0].price).toFixed(4)) : '-';
-                
-                // Taula Ordres Actives
-                const allOrders = [...sells.reverse(), ...buys];
-                document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => 
-                    `<tr>
-                        <td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase()}</b></td>
-                        <td>${fmtCrypto(parseFloat(o.price).toFixed(5))}</td>
-                        <td>${fmtCrypto(o.amount)}</td>
-                    </tr>`
-                ).join('');
-                
-                // Taula Històric Trades
-                document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => 
-                    `<tr>
-                        <td>${new Date(t.timestamp).toLocaleTimeString()}</td>
-                        <td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side}</span></td>
-                        <td>${fmtCrypto(parseFloat(t.price).toFixed(5))}</td>
-                        <td>${fmtUSDC(t.cost)}</td> 
-                    </tr>`
-                ).join('');
-            } catch(e) { console.error(e); }
-        }
-
-        function renderCandleChart(safeSym, data, gridLines) {
-            const dom = document.getElementById(`chart-${safeSym}`);
-            if(!dom) return;
-            if (!data || data.length === 0) return;
-            const currentPrice = data[data.length - 1][4]; 
-            const validData = data.filter(d => d[4] > currentPrice * 0.5);
-            let chart = echarts.getInstanceByDom(dom);
-            if (!chart) chart = echarts.init(dom);
-            const markLines = gridLines.map(p => ({ yAxis: p, lineStyle: { color: '#9ca3af', type: 'dashed', opacity: 0.5 } }));
-            const option = { animation: false, grid: { left: 10, right: 60, top: 10, bottom: 20, containLabel: true }, tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } }, xAxis: { type: 'category', data: validData.map(i => i[0]), scale: true, boundaryGap: true, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false } }, yAxis: { scale: true, position: 'right', splitLine: { show: true, lineStyle: { color: '#f3f4f6' } } }, dataZoom: [{ type: 'inside', start: 60, end: 100 }], series: [{ type: 'candlestick', data: validData.map(i => [i[1], i[2], i[3], i[4]]), itemStyle: { color: '#0ecb81', color0: '#f6465d', borderColor: '#0ecb81', borderColor0: '#f6465d' }, markLine: { symbol: 'none', data: markLines, label: { show: false }, silent: true } }] };
-            chart.setOption(option);
-        }
-
-        init();
-        setInterval(() => { if (currentMode === 'home') loadHome(); else if (currentMode !== 'config') loadSymbol(currentMode); }, 4000);
-    </script>
 </body>
 </html>

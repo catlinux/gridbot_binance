@@ -12,20 +12,14 @@ class GridBot:
         self.connector = BinanceConnector()
         self.db = BotDatabase()
         self.config = self.connector.config
-        
-        # Inicialitzem mapa de parells
         self.pairs_map = {}
         self._refresh_pairs_map()
-        
         self.levels = {} 
         self.is_running = False
         self.reserved_inventory = {} 
-        
-        # Guardem l'hora d'inici per filtrar la DB després
         self.global_start_time = time.time()
 
     def _refresh_pairs_map(self):
-        """Llegeix la config i crea un diccionari {Simbol: Config}."""
         self.pairs_map = {p['symbol']: p for p in self.config['pairs'] if p['enabled']}
         self.active_pairs = list(self.pairs_map.keys())
 
@@ -41,8 +35,6 @@ class GridBot:
 
                     open_orders = self.connector.fetch_open_orders(symbol) or []
                     grid_levels = self.levels.get(symbol, [])
-                    
-                    # Ja no passem stats, només guardem ordres i nivells
                     self.db.update_grid_status(symbol, open_orders, grid_levels)
 
                     trades = self.connector.fetch_my_trades(symbol, limit=10)
@@ -59,15 +51,12 @@ class GridBot:
         params = self._get_params(symbol)
         quantity = params['grids_quantity']
         spread_percent = params['grid_spread'] / 100 
-        
         log.info(f"Calculant graella {symbol}. Spread: {params['grid_spread']}% | Nivells: {quantity}")
-        
         levels = []
         for i in range(1, int(quantity / 2) + 1):
             levels.append(current_price * (1 - (spread_percent * i))) 
             levels.append(current_price * (1 + (spread_percent * i))) 
         levels.sort()
-        
         clean_levels = []
         for p in levels:
             try:
@@ -80,7 +69,6 @@ class GridBot:
         params = self._get_params(symbol)
         amount_usdc = params['amount_per_grid']
         base_amount = amount_usdc / price 
-        
         market = self.connector.exchange.market(symbol)
         min_amount = market['limits']['amount']['min']
         if base_amount < min_amount: return 0.0
@@ -136,37 +124,25 @@ class GridBot:
             log.warning(f"[{symbol}] Creant ordre {target_side} @ {level_price}")
             self.connector.place_order(symbol, target_side, amount, level_price)
 
-    # --- LÒGICA DE SMART RELOAD ---
     def _handle_smart_reload(self):
         log.warning("🔄 CONFIGURACIÓ ACTUALITZADA: Analitzant canvis...")
-        
         old_map = copy.deepcopy(self.pairs_map)
         self.config = self.connector.config
         self._refresh_pairs_map()
-        
         new_symbols = set(self.pairs_map.keys())
         old_symbols = set(old_map.keys())
-        
-        # A. Monedes tretes
         removed = old_symbols - new_symbols
         for symbol in removed:
             log.info(f"⛔ Aturant {symbol}. Cancel·lant ordres...")
             self.connector.cancel_all_orders(symbol)
             if symbol in self.levels: del self.levels[symbol]
-            if symbol in self.reserved_inventory: 
-                del self.reserved_inventory[symbol.split('/')[0]]
-
-        # B. Monedes Noves
+            if symbol in self.reserved_inventory: del self.reserved_inventory[symbol.split('/')[0]]
         added = new_symbols - old_symbols
-        for symbol in added:
-            log.success(f"✨ Activant {symbol}.")
-
-        # C. Monedes que continuen
+        for symbol in added: log.success(f"✨ Activant {symbol}.")
         kept = old_symbols & new_symbols
         for symbol in kept:
             old_strat = old_map[symbol].get('strategy')
             new_strat = self.pairs_map[symbol].get('strategy')
-            
             if old_strat != new_strat:
                 log.warning(f"♻️ Canvi detectat a {symbol}. Reiniciant grid...")
                 base_asset = symbol.split('/')[0]
@@ -174,28 +150,53 @@ class GridBot:
                 if total_holding > 0:
                     self.reserved_inventory[base_asset] = total_holding
                     log.info(f"🔒 {symbol}: Reservats {total_holding} {base_asset}.")
-                
                 self.connector.cancel_all_orders(symbol)
                 if symbol in self.levels: del self.levels[symbol]
-
         log.info("✅ Recàrrega intel·ligent completada.")
+
+    # --- NOVA FUNCIÓ: TANCAMENT MANUAL ---
+    def manual_close_order(self, symbol, order_id, side, amount):
+        """
+        1. Cancel·la l'ordre.
+        2. Si era BUY: Ja tenim USDC. Fi.
+        3. Si era SELL: Tenim la moneda. Fem Market Sell per passar a USDC.
+        """
+        log.warning(f"MANUAL: Tancant ordre {order_id} ({side}) en {symbol}...")
+        
+        # 1. Cancel·lar
+        res = self.connector.cancel_order(order_id, symbol)
+        
+        # Si la cancel·lació falla, potser ja s'ha omplert.
+        # Però si retorna None o error, assumim que no podem continuar.
+        # CCXT retorna resposta o llença excepció. El wrapper torna None en error.
+        
+        if side == 'buy':
+            log.success(f"Ordre {order_id} cancel·lada. USDC recuperats.")
+            return True
+        
+        elif side == 'sell':
+            # Hem recuperat la crypto, ara la venem a mercat
+            # Esperem un moment per seguretat que el saldo s'actualitzi
+            time.sleep(0.5)
+            market_order = self.connector.place_market_sell(symbol, amount)
+            if market_order:
+                log.success(f"Actiu venut a mercat (Market Sell) correctament.")
+                return True
+            else:
+                log.error("No s'ha pogut executar el Market Sell.")
+                return False
 
     def start(self):
         log.info("--- INICIANT GRIDBOT PROFESSIONAL ---")
         self.connector.validate_connection()
-        
         log.warning("Netejant ordres antigues inicials...")
         for symbol in self.active_pairs:
             self.connector.cancel_all_orders(symbol)
-            
         log.info("Esperant 5 segons post-neteja...")
         time.sleep(5)
-
         self.is_running = True
-        
         data_thread = threading.Thread(target=self._data_collector_loop, daemon=True)
         data_thread.start()
-
         try:
             self._monitoring_loop()
         except KeyboardInterrupt:
