@@ -55,15 +55,16 @@ async def read_root(request: Request):
 async def get_status():
     if not bot_instance: return {"status": "Offline"}
     
+    # 1. VALOR TOTAL ACTUAL (Equity)
+    total_equity_now = bot_instance.connector.get_estimated_portfolio_value(bot_instance.active_pairs)
+    
     prices = db.get_all_prices()
     portfolio = []
-    total_val = 0.0
     
     try:
         usdc = bot_instance.connector.get_asset_balance('USDC')
     except: usdc = 0.0
     portfolio.append({"name": "USDC", "value": round(usdc, 2)})
-    total_val += usdc
 
     for symbol in bot_instance.active_pairs:
         base = symbol.split('/')[0]
@@ -74,16 +75,28 @@ async def get_status():
             val = qty * price
             if val > 1:
                 portfolio.append({"name": base, "value": round(val, 2)})
-                total_val += val
         except: pass
 
+    # 2. Dades Globals (Històric)
     global_stats = db.get_stats(from_timestamp=0)
     first_run_ts = db.get_first_run_timestamp()
     total_uptime_str = format_uptime(time.time() - first_run_ts)
+    
+    # --- CÀLCUL BENEFICI GLOBAL (Equity) ---
+    global_start_equity = db.get_global_start_balance()
+    # Si és 0 (perquè acabem d'actualitzar el codi), agafem el valor actual per començar de 0
+    if global_start_equity == 0: global_start_equity = total_equity_now
+    
+    global_profit_real = total_equity_now - global_start_equity
+    # ---------------------------------------
 
+    # 3. Dades de Sessió
     session_start = bot_instance.global_start_time
-    session_stats = db.get_stats(from_timestamp=session_start)
+    session_stats_db = db.get_stats(from_timestamp=session_start) 
     session_uptime_str = format_uptime(time.time() - session_start)
+    
+    session_start_equity = db.get_session_start_balance()
+    session_profit_real = total_equity_now - session_start_equity
 
     strategies_data = []
     per_coin_pnl = global_stats['per_coin_stats']['pnl']
@@ -104,21 +117,21 @@ async def get_status():
         "status": "Running" if bot_instance.is_running else "Stopped",
         "active_pairs": bot_instance.active_pairs,
         "balance_usdc": round(usdc, 2),
-        "total_usdc_value": round(total_val, 2),
+        "total_usdc_value": round(total_equity_now, 2), 
         "portfolio_distribution": portfolio,
-        "session_trades_distribution": session_stats['trades_distribution'],
+        "session_trades_distribution": session_stats_db['trades_distribution'],
         "global_trades_distribution": global_stats['trades_distribution'],
         "strategies": strategies_data,
         "stats": {
             "session": {
-                "trades": session_stats['trades'],
-                "profit": round(session_stats['profit'], 4),
-                "best_coin": session_stats['best_coin'],
+                "trades": session_stats_db['trades'],
+                "profit": round(session_profit_real, 4), 
+                "best_coin": session_stats_db['best_coin'],
                 "uptime": session_uptime_str
             },
             "global": {
                 "trades": global_stats['trades'],
-                "profit": round(global_stats['profit'], 2),
+                "profit": round(global_profit_real, 2), # ARA ÉS REAL (Equity)
                 "best_coin": global_stats['best_coin'],
                 "uptime": total_uptime_str
             }

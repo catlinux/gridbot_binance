@@ -25,7 +25,7 @@ Un bot de trading automático de alta frecuencia basado en la estrategia **Grid 
 3. [Instalación Paso a Paso](#-instalación-paso-a-paso)
 4. [Configuración y Uso](#-configuración-y-uso)
 5. [Herramientas de Utilidad](#-herramientas-de-utilidad)
-6. [Soporte y Donaciones](#-soporte-y-donaciones)
+6. [Ayuda al Proyecto y soporte](#-soporte-y-donaciones)
 7. [Aviso Legal (Disclaimer)](#-aviso-legal-disclaimer)
 
 ---
@@ -83,7 +83,7 @@ Necesitas tener Python instalado en tu sistema para ejecutar el bot.
 Descarga el código del bot en tu ordenador:
 
 ```bash
-git clone [https://github.com/catlinux/gridbot_binance.git](https://github.com/catlinux/gridbot_binance.git)
+https://github.com/catlinux/gridbot_binance.git
 cd gridbot_binance
 ```
 
@@ -158,7 +158,7 @@ Esto dejará tu cuenta limpia de órdenes limit, lista para apagar el sistema o 
 
 ---
 
-## ❤️ Soporte y Donaciones
+## ❤️ Ayuda al Proyecto y Donaciones
 
 Este proyecto es Open Source y requiere muchas horas de desarrollo y mantenimiento. Si la herramienta te ha sido útil, te ha ayudado a aprender o te ha generado beneficios, considera hacer una pequeña donación. ¡Ayuda a mantener el código actualizado y a añadir nuevas funcionalidades!
 

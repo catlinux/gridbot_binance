@@ -104,6 +104,26 @@ class BinanceConnector:
             log.error(f"Error obteniendo precio para {symbol}: {e}")
             return 0.0
 
+    # --- NOVA FUNCIÓ CLAU ---
+    def get_estimated_portfolio_value(self, active_pairs):
+        """Calcula el valor TOTAL del compte en USDC (Equity)."""
+        total_usdc = 0.0
+        
+        # 1. Sumar USDC real
+        total_usdc += self.get_total_balance('USDC')
+        
+        # 2. Sumar valor de les monedes actives
+        # Extreure la base de cada parell (ex: BTC/USDC -> BTC)
+        bases = set([p['symbol'].split('/')[0] for p in self.config['pairs'] if p['enabled']])
+        
+        for base in bases:
+            qty = self.get_total_balance(base)
+            if qty > 0:
+                price = self.fetch_current_price(f"{base}/USDC")
+                total_usdc += (qty * price)
+                
+        return total_usdc
+
     def place_order(self, symbol, side, amount, price):
         params = {}
         try:

@@ -17,15 +17,56 @@ class BotDatabase:
     def _init_db(self):
         conn = self._get_conn()
         cursor = conn.cursor()
+        
         cursor.execute('''CREATE TABLE IF NOT EXISTS market_data (symbol TEXT PRIMARY KEY, price REAL, candles_json TEXT, updated_at REAL)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS grid_status (symbol TEXT PRIMARY KEY, open_orders_json TEXT, grid_levels_json TEXT, updated_at REAL)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS trade_history (id TEXT PRIMARY KEY, symbol TEXT, side TEXT, price REAL, amount REAL, cost REAL, timestamp REAL)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS bot_info (key TEXT PRIMARY KEY, value TEXT)''')
+        
         cursor.execute("SELECT value FROM bot_info WHERE key='first_run'")
         if not cursor.fetchone():
             cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', str(time.time())))
+
         conn.commit()
         conn.close()
+
+    # --- SESSIÓ (Es reinicia cada cop) ---
+    def set_session_start_balance(self, value):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('session_start_balance', str(value)))
+        conn.commit()
+        conn.close()
+
+    def get_session_start_balance(self):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM bot_info WHERE key='session_start_balance'")
+        row = cursor.fetchone()
+        conn.close()
+        if row: return float(row[0])
+        return 0.0
+
+    # --- GLOBAL (Es guarda només el primer cop i perdura) ---
+    def set_global_start_balance_if_not_exists(self, value):
+        """Guarda el saldo inicial NOMÉS si no existeix ja."""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM bot_info WHERE key='global_start_balance'")
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('global_start_balance', str(value)))
+        conn.commit()
+        conn.close()
+
+    def get_global_start_balance(self):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM bot_info WHERE key='global_start_balance'")
+        row = cursor.fetchone()
+        conn.close()
+        if row: return float(row[0])
+        return 0.0
+    # -----------------------------------------
 
     def update_market_snapshot(self, symbol, price, candles):
         conn = self._get_conn()
@@ -96,7 +137,8 @@ class BotDatabase:
         conn.close()
 
         total_trades = len(rows)
-        pnl = 0.0
+        # El pnl aquí es purament informatiu sobre flux de caixa de les operacions
+        pnl = 0.0 
         pnl_per_coin = {}
         trades_per_coin = {} 
 
@@ -120,7 +162,6 @@ class BotDatabase:
 
         trades_distribution = [{"name": k, "value": v} for k, v in trades_per_coin.items()]
 
-        # Retornem també les dades brutes per moneda per la taula d'estratègies
         return {
             "trades": total_trades,
             "profit": pnl,

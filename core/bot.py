@@ -178,6 +178,21 @@ class GridBot:
             self.connector.cancel_all_orders(symbol)
         log.info("Esperando 5 segundos post-limpieza...")
         time.sleep(5)
+        
+        # --- CÀLCUL DE SALDOS INICIALS ---
+        log.info("📸 Tomando instantánea del valor de la cartera...")
+        initial_equity = self.connector.get_estimated_portfolio_value(self.active_pairs)
+        
+        # Guardar saldo inicial de SESSIÓ (Sempre es renova en arrancar)
+        self.db.set_session_start_balance(initial_equity)
+        
+        # Guardar saldo inicial GLOBAL (Només si no existeix, per exemple primer cop que s'instal·la)
+        # Si és un update d'una versió anterior, es guardarà l'actual com a punt de partida.
+        self.db.set_global_start_balance_if_not_exists(initial_equity)
+        
+        log.success(f"Valor Total Cartera: {initial_equity:.2f} USDC")
+        # ---------------------------------
+
         self.is_running = True
         data_thread = threading.Thread(target=self._data_collector_loop, daemon=True)
         data_thread.start()
