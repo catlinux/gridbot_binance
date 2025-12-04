@@ -1,4 +1,4 @@
-# Arxiu: gridbot_binance/neteja.py
+# Arxiu: gridbot_binance/limpieza.py
 from core.exchange import BinanceConnector
 from utils.logger import log
 import json5

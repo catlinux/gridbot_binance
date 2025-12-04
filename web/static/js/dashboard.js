@@ -1,4 +1,4 @@
-// Arxiu: gridbot_binance/web/static/js/main.js
+// Arxiu: gridbot_binance/web/static/js/dashboard.js
 
 let currentMode = 'home';
 let charts = {};
@@ -6,19 +6,33 @@ let initialized = false;
 let currentTimeframe = '15m';
 let currentConfigObj = null; 
 
-// FORMATTERS
+// --- FORMATTERS INTEL·LIGENTS ---
+
 const fmtUSDC = (num) => { 
     if (num === undefined || num === null) return '--'; 
     return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); 
 };
+
+const fmtPrice = (num) => {
+    if (num === undefined || num === null) return '--';
+    const val = parseFloat(num);
+    if (val < 1.0) return val.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    if (val >= 1000) return val.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    return val.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
 const fmtInt = (num) => { 
     if (num === undefined || num === null) return '--'; 
     return parseInt(num).toLocaleString('es-ES'); 
 };
+
 const fmtCrypto = (num) => { 
     if (!num) return '-'; 
-    return num.toString().replace('.', ','); 
+    const val = parseFloat(num);
+    let dec = val < 1 ? 5 : 2;
+    return val.toLocaleString('es-ES', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 };
+
 const fmtPct = (num) => {
     if (!num) return '0,00%';
     return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
@@ -164,7 +178,7 @@ async function loadGlobalOrders() {
                 const pnlPercent = ((o.current_price - o.entry_price) / o.entry_price) * 100;
                 pnlDisplay = fmtPct(pnlPercent);
                 pnlClass = pnlPercent >= 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
-                entryDisplay = fmtUSDC(o.entry_price);
+                entryDisplay = fmtPrice(o.entry_price);
             } else if (isBuy) {
                 entryDisplay = '<small class="text-muted">Target</small>'; 
             }
@@ -173,9 +187,9 @@ async function loadGlobalOrders() {
                 <tr>
                     <td class="fw-bold">${o.symbol}</td>
                     <td>${typeBadge}</td>
-                    <td>${fmtUSDC(o.price)}</td>
+                    <td>${fmtPrice(o.price)}</td>
                     <td class="text-muted">${entryDisplay}</td>
-                    <td>${fmtUSDC(o.current_price)}</td>
+                    <td>${fmtPrice(o.current_price)}</td>
                     <td class="${pnlClass}">${pnlDisplay}</td>
                     <td>${fmtUSDC(o.total_value)}</td>
                     <td class="text-end">
@@ -237,8 +251,15 @@ async function loadHome() {
         const strategiesBody = document.getElementById('strategies-table-body');
         if (strategiesBody) {
             strategiesBody.innerHTML = data.strategies.map(s => {
-                const pnlClass = s.total_pnl >= 0 ? 'text-success' : 'text-danger';
-                const pnlSign = s.total_pnl >= 0 ? '+' : '';
+                const totalPnlClass = s.total_pnl >= 0 ? 'text-success' : 'text-danger';
+                const totalPnlSign = s.total_pnl >= 0 ? '+' : '';
+                const totalPnlText = s.total_trades > 0 ? `${totalPnlSign}${fmtUSDC(s.total_pnl)} $` : '0,00 $';
+                const totalPnlFinalClass = s.total_trades > 0 ? totalPnlClass : 'text-muted';
+
+                const sessPnlClass = s.session_pnl >= 0 ? 'text-success' : 'text-danger';
+                const sessPnlSign = s.session_pnl >= 0 ? '+' : '';
+                const sessPnlText = `${sessPnlSign}${fmtUSDC(s.session_pnl)} $`;
+
                 const safeSym = s.symbol.replace('/', '_');
                 
                 return `
@@ -247,7 +268,8 @@ async function loadHome() {
                         <td><span class="badge bg-success bg-opacity-25 text-success">Activo</span></td>
                         <td><small>${s.grids} Líneas @ ${s.amount}$ (Spread ${s.spread}%)</small></td>
                         <td class="fw-bold">${s.total_trades}</td>
-                        <td class="${pnlClass} fw-bold">${pnlSign}${fmtUSDC(s.total_pnl)} $</td>
+                        <td class="${totalPnlFinalClass} fw-bold">${totalPnlText}</td>
+                        <td class="${sessPnlClass} fw-bold">${sessPnlText}</td>
                         <td class="text-end">
                             <button class="btn btn-sm btn-outline-primary" onclick="document.querySelector('[data-bs-target=\\'#content-${safeSym}\\']').click()">
                                 <i class="fa-solid fa-chart-line"></i> Ver
@@ -270,7 +292,7 @@ async function loadSymbol(symbol) {
         if (!res.ok) return;
         const data = await res.json();
         
-        document.getElementById(`price-${safe}`).innerText = `${fmtUSDC(data.price)} USDC`;
+        document.getElementById(`price-${safe}`).innerText = `${fmtPrice(data.price)} USDC`;
         
         renderCandleChart(safe, data.chart_data, data.grid_lines, data.open_orders);
         
@@ -278,16 +300,16 @@ async function loadSymbol(symbol) {
         const sells = data.open_orders.filter(o => o.side === 'sell').sort((a,b) => a.price - b.price);
         document.getElementById(`count-buy-${safe}`).innerText = buys.length;
         document.getElementById(`count-sell-${safe}`).innerText = sells.length;
-        document.getElementById(`next-buy-${safe}`).innerText = buys.length ? fmtCrypto(parseFloat(buys[0].price).toFixed(4)) : '-';
-        document.getElementById(`next-sell-${safe}`).innerText = sells.length ? fmtCrypto(parseFloat(sells[0].price).toFixed(4)) : '-';
+        
+        document.getElementById(`next-buy-${safe}`).innerText = buys.length ? fmtPrice(buys[0].price) : '-';
+        document.getElementById(`next-sell-${safe}`).innerText = sells.length ? fmtPrice(sells[0].price) : '-';
         
         const allOrders = [...sells.reverse(), ...buys];
-        document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase() === 'BUY' ? 'COMPRA' : 'VENTA'}</b></td><td>${fmtCrypto(parseFloat(o.price).toFixed(5))}</td><td>${fmtCrypto(o.amount)}</td></tr>`).join('');
-        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side === 'buy' ? 'COMPRA' : 'VENTA'}</span></td><td>${fmtCrypto(parseFloat(t.price).toFixed(5))}</td><td>${fmtUSDC(t.cost)}</td></tr>`).join('');
+        document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase() === 'BUY' ? 'COMPRA' : 'VENTA'}</b></td><td>${fmtPrice(o.price)}</td><td>${fmtCrypto(o.amount)}</td></tr>`).join('');
+        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side === 'buy' ? 'COMPRA' : 'VENTA'}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`).join('');
     } catch(e) { console.error(e); }
 }
 
-// --- CONFIGURACIÓ VISUAL DE LÍNIES ---
 function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     const dom = document.getElementById(`chart-${safeSym}`);
     if(!dom) return;
@@ -296,15 +318,43 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     let chart = echarts.getInstanceByDom(dom);
     if (!chart) chart = echarts.init(dom);
 
+    // Convertim dades a float segur
+    const candlesData = data.map(i => [i[0], parseFloat(i[1]), parseFloat(i[2]), parseFloat(i[3]), parseFloat(i[4])]);
+    const currentPrice = candlesData[candlesData.length - 1][4];
+    
+    // Filtrem dades vàlides per al zoom (evitar espelmes 0 o errors)
+    const validData = candlesData.filter(d => d[4] > currentPrice * 0.1);
+
+    // --- CÀLCUL DEL RANG Y MANUAL ---
+    // Recollim TOTS els preus rellevants: Màxims i Mínims de les espelmes + Preus de les ordres
+    let allPrices = [];
+    validData.forEach(d => {
+        allPrices.push(d[3]); // Low
+        allPrices.push(d[4]); // High
+    });
+    // Afegim els preus de les ordres al càlcul del rang, per assegurar que es vegin
+    activeOrders.forEach(o => allPrices.push(parseFloat(o.price)));
+    
+    // Calculem mínim i màxim absoluts del que hem de dibuixar
+    let yMin = Math.min(...allPrices);
+    let yMax = Math.max(...allPrices);
+    
+    // Afegim un petit marge (padding) del 0.2% dalt i baix perquè no toqui les vores
+    const padding = (yMax - yMin) * 0.002;
+    yMin = yMin - padding;
+    yMax = yMax + padding;
+    // --------------------------------
+
     const gridMarkLines = gridLines.map(p => ({
-        yAxis: p,
+        yAxis: parseFloat(p),
         lineStyle: { color: '#e5e7eb', type: 'dotted', width: 1 },
         label: { show: false },
         silent: true
     }));
 
+    // Tornem a les línies senceres (NO segmentades), però assegurant parseFloat
     const orderMarkLines = activeOrders.map(o => ({
-        yAxis: o.price,
+        yAxis: parseFloat(o.price),
         lineStyle: {
             color: o.side === 'buy' ? '#0ecb81' : '#f6465d',
             type: 'solid',
@@ -312,27 +362,43 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
         },
         label: {
             show: true,
-            // AQUI ESTÀ EL CANVI: 'insideEnd' + 'bottom' fa que el text floti SOBRE la línia
-            position: 'insideEnd', 
-            verticalAlign: 'bottom', 
-            formatter: o.side === 'buy' ? 'COMPRA' : 'VENTA',
-            color: o.side === 'buy' ? '#0ecb81' : '#f6465d',
-            fontSize: 9, // Font una mica més petita per estètica
-            fontWeight: 'bold',
-            padding: [0, 0, 2, 0] // Petit marge inferior per separar-lo de la línia
+            position: 'end', // Tornem a posar-ho al final (dreta)
+            formatter: (o.side === 'buy' ? 'COMPRA' : 'VENTA') + ' ' + fmtPrice(o.price),
+            color: '#fff',
+            backgroundColor: o.side === 'buy' ? '#0ecb81' : '#f6465d',
+            padding: [3, 5],
+            borderRadius: 3,
+            fontSize: 10,
+            fontWeight: 'bold'
         }
     }));
 
     const allMarkLines = [...gridMarkLines, ...orderMarkLines];
 
-    const currentPrice = data[data.length - 1][4]; 
-    const validData = data.filter(d => d[4] > currentPrice * 0.5);
-
     const option = { 
         animation: false, 
-        // AUGMENTEM EL MARGE DRET (right: 75) perquè els preus no es mengin el gràfic
         grid: { left: 10, right: 75, top: 10, bottom: 20, containLabel: true }, 
-        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } }, 
+        
+        tooltip: { 
+            trigger: 'axis', 
+            axisPointer: { type: 'cross' },
+            formatter: function (params) {
+                if(!params || params.length === 0) return '';
+                const date = params[0].axisValue;
+                let html = `<b>${date}</b><br/>`;
+                params.forEach(p => {
+                    if(p.seriesType === 'candlestick') {
+                        const O = fmtPrice(p.data[1]);
+                        const C = fmtPrice(p.data[2]);
+                        const L = fmtPrice(p.data[3]);
+                        const H = fmtPrice(p.data[4]);
+                        html += `Apertura: ${O}<br/>Cierre: ${C}<br/>Min: ${L}<br/>Max: ${H}`;
+                    }
+                });
+                return html;
+            }
+        }, 
+        
         xAxis: { 
             type: 'category', 
             data: validData.map(i => i[0]), 
@@ -345,7 +411,15 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
         yAxis: { 
             scale: true, 
             position: 'right', 
-            splitLine: { show: true, lineStyle: { color: '#f3f4f6' } } 
+            // AQUI ESTÀ EL TRUC: Forcem el rang manualment perquè ECharts no comprimeixi
+            min: yMin,
+            max: yMax,
+            splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
+            axisLabel: {
+                formatter: function (value) {
+                    return fmtPrice(value);
+                }
+            }
         }, 
         dataZoom: [{ type: 'inside', start: 60, end: 100 }], 
         series: [{ 
@@ -360,7 +434,7 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
             markLine: { 
                 symbol: 'none', 
                 data: allMarkLines, 
-                silent: true 
+                silent: true
             } 
         }] 
     };
@@ -421,6 +495,27 @@ async function init() {
         }
         loadHome();
     } catch (e) { console.error("Error init:", e); }
+}
+
+async function resetStatistics() {
+    if (!confirm("⚠️ ATENCIÓN ⚠️\n\n¿Estás seguro de que quieres borrar TODAS las estadísticas?\n\nSe pondrá a cero el PnL, el historial de operaciones y los tiempos de sesión.\nEsta acción no se puede deshacer.")) {
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/reset_stats', { method: 'POST' });
+        const data = await res.json();
+        
+        if (res.ok) {
+            alert(data.message);
+            location.reload(); 
+        } else {
+            alert("Error: " + data.detail);
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Error de conexión con el servidor.");
+    }
 }
 
 init();

@@ -10,13 +10,12 @@ gridbot_binance/
 ├── utils/
 │   ├── __init__.py
 │   ├── logger.py          # Sistema de logs i colors
-│   └── helpers.py         # Funcions auxiliars
 ├── web/
 │   ├── static/            # Arxius estàtics (Frontend optimitzat)
 │   │   ├── css/
 │   │   │   └── style.css  # Estils visuals
 │   │   └── js/
-│   │       └── main.js    # Lògica del Dashboard i Gràfics
+│   │       └── dashboard.js    # Lògica del Dashboard i Gràfics
 │   ├── templates/
 │   │   └── index.html     # Estructura HTML base
 │   └── server.py          # API Backend (FastAPI)

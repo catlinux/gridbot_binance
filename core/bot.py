@@ -118,8 +118,8 @@ class GridBot:
                 reserved = self.reserved_inventory.get(base_asset, 0.0)
                 if (balance - reserved) < amount * 0.99: continue
                 if balance < amount and balance > amount * 0.9:
-                     try: amount = float(self.connector.exchange.amount_to_precision(symbol, balance))
-                     except: pass
+                      try: amount = float(self.connector.exchange.amount_to_precision(symbol, balance))
+                      except: pass
 
             log.warning(f"[{symbol}] Creando orden {target_side} @ {level_price}")
             self.connector.place_order(symbol, target_side, amount, level_price)
@@ -170,9 +170,40 @@ class GridBot:
                 log.error("No se ha podido ejecutar el Market Sell.")
                 return False
 
+    def calculate_total_equity(self):
+        """Calcula el valor TOTAL de la cartera en USDC (Crypto + USDC lliure)"""
+        total_usdc = 0.0
+        
+        # 1. Sumar USDC lliures
+        try:
+            total_usdc += self.connector.get_total_balance('USDC')
+        except: pass
+        
+        # 2. Sumar valor de les criptos actives convertides a USDC
+        for symbol in self.active_pairs:
+            base = symbol.split('/')[0]
+            try:
+                qty = self.connector.get_total_balance(base)
+                if qty > 0:
+                    price = self.connector.fetch_current_price(symbol)
+                    total_usdc += (qty * price)
+            except: pass
+            
+        return total_usdc
+
     def start(self):
         log.info("--- INICIANDO GRIDBOT PROFESSIONAL ---")
         self.connector.validate_connection()
+        
+        # --- CÀLCUL INICIAL DE PATRIMONI ---
+        log.info("Calculando patrimonio inicial...")
+        initial_equity = self.calculate_total_equity()
+        log.info(f"💰 Patrimonio Inicial Total: {initial_equity:.2f} USDC")
+        
+        self.db.set_session_start_balance(initial_equity)
+        self.db.set_global_start_balance_if_not_exists(initial_equity)
+        # -----------------------------------
+
         log.warning("Limpiando órdenes antiguas iniciales...")
         for symbol in self.active_pairs:
             self.connector.cancel_all_orders(symbol)

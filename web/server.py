@@ -57,54 +57,98 @@ async def get_status():
     
     prices = db.get_all_prices()
     portfolio = []
-    total_val = 0.0
+    current_total_equity = 0.0
     
+    # 1. Obtenir USDC total
     try:
-        usdc = bot_instance.connector.get_asset_balance('USDC')
-    except: usdc = 0.0
-    portfolio.append({"name": "USDC", "value": round(usdc, 2)})
-    total_val += usdc
+        usdc_balance = bot_instance.connector.get_total_balance('USDC')
+    except: usdc_balance = 0.0
+    
+    portfolio.append({"name": "USDC", "value": round(usdc_balance, 2)})
+    current_total_equity += usdc_balance
 
+    holding_values = {}
+    current_prices_map = {}
+
+    # 2. Obtenir Valor Crypto
     for symbol in bot_instance.active_pairs:
         base = symbol.split('/')[0]
         try:
             qty = bot_instance.connector.get_total_balance(base)
             price = prices.get(symbol, 0.0)
             if price == 0: price = bot_instance.connector.fetch_current_price(symbol)
+            
+            current_prices_map[symbol] = price 
+            
             val = qty * price
-            if val > 1:
+            holding_values[symbol] = val 
+            
+            if val > 0.5: 
                 portfolio.append({"name": base, "value": round(val, 2)})
-                total_val += val
+                current_total_equity += val
         except: pass
 
+    # --- PnL GLOBAL (Es manté per Equity real) ---
+    global_start = db.get_global_start_balance()
+    if global_start == 0: global_start = current_total_equity
+    global_pnl_total = current_total_equity - global_start
+    # ---------------------------------------------
+
+    # Obtenir estadístiques detallades
     global_stats = db.get_stats(from_timestamp=0)
+    global_cash_flow = global_stats['per_coin_stats']['cash_flow']
+    global_trades_map = global_stats['per_coin_stats']['trades']
+    
+    session_start_ts = bot_instance.global_start_time
+    session_stats = db.get_stats(from_timestamp=session_start_ts)
+    session_cash_flow = session_stats['per_coin_stats']['cash_flow']
+    session_qty_delta = session_stats['per_coin_stats']['qty_delta']
+
     first_run_ts = db.get_first_run_timestamp()
     total_uptime_str = format_uptime(time.time() - first_run_ts)
+    session_uptime_str = format_uptime(time.time() - session_start_ts)
 
-    session_start = bot_instance.global_start_time
-    session_stats = db.get_stats(from_timestamp=session_start)
-    session_uptime_str = format_uptime(time.time() - session_start)
-
+    # Preparar dades per la taula d'Estratègies
     strategies_data = []
-    per_coin_pnl = global_stats['per_coin_stats']['pnl']
-    per_coin_trades = global_stats['per_coin_stats']['trades']
+    
+    # Variable per acumular el PnL de sessió exacte de la taula
+    accumulated_session_pnl = 0.0
 
     for symbol in bot_instance.active_pairs:
         strat_conf = bot_instance.pairs_map.get(symbol, {}).get('strategy', {})
+        trades_count = global_trades_map.get(symbol, 0)
+        curr_price = current_prices_map.get(symbol, 0.0)
+        
+        # 1. PnL Global (Aprox)
+        cf_global = global_cash_flow.get(symbol, 0.0)
+        curr_val = holding_values.get(symbol, 0.0)
+        strat_pnl_global = curr_val + cf_global
+        
+        # 2. PnL Sessió (Calculat amb Delta d'Inventari)
+        cf_session = session_cash_flow.get(symbol, 0.0)
+        qty_change = session_qty_delta.get(symbol, 0.0)
+        
+        inventory_value_change = qty_change * curr_price
+        strat_pnl_session = inventory_value_change + cf_session
+        
+        # Sumem al total acumulat
+        accumulated_session_pnl += strat_pnl_session
+
         strategies_data.append({
             "symbol": symbol,
             "grids": strat_conf.get('grids_quantity', '-'),
             "amount": strat_conf.get('amount_per_grid', '-'),
             "spread": strat_conf.get('grid_spread', '-'),
-            "total_trades": per_coin_trades.get(symbol, 0),
-            "total_pnl": round(per_coin_pnl.get(symbol, 0.0), 2)
+            "total_trades": trades_count,
+            "total_pnl": round(strat_pnl_global, 2),  
+            "session_pnl": round(strat_pnl_session, 2)
         })
 
     return {
         "status": "Running" if bot_instance.is_running else "Stopped",
         "active_pairs": bot_instance.active_pairs,
-        "balance_usdc": round(usdc, 2),
-        "total_usdc_value": round(total_val, 2),
+        "balance_usdc": round(usdc_balance, 2),
+        "total_usdc_value": round(current_total_equity, 2),
         "portfolio_distribution": portfolio,
         "session_trades_distribution": session_stats['trades_distribution'],
         "global_trades_distribution": global_stats['trades_distribution'],
@@ -112,13 +156,13 @@ async def get_status():
         "stats": {
             "session": {
                 "trades": session_stats['trades'],
-                "profit": round(session_stats['profit'], 4),
+                "profit": round(accumulated_session_pnl, 2), # ARA SÍ: Suma exacta de les estratègies
                 "best_coin": session_stats['best_coin'],
                 "uptime": session_uptime_str
             },
             "global": {
                 "trades": global_stats['trades'],
-                "profit": round(global_stats['profit'], 2),
+                "profit": round(global_pnl_total, 2),
                 "best_coin": global_stats['best_coin'],
                 "uptime": total_uptime_str
             }
@@ -203,3 +247,17 @@ async def save_config(config: ConfigUpdate):
         return {"status": "success", "message": "Configuración guardada correctamente."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error de sintaxis JSON5: {e}")
+
+@app.post("/api/reset_stats")
+async def reset_stats_api():
+    try:
+        db.reset_all_statistics()
+        if bot_instance:
+            bot_instance.global_start_time = time.time()
+            current_equity = bot_instance.calculate_total_equity()
+            db.set_session_start_balance(current_equity)
+            db.set_global_start_balance_if_not_exists(current_equity)
+            
+        return {"status": "success", "message": "Estadísticas reiniciadas correctamente."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

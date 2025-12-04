@@ -67,9 +67,9 @@
       "symbol": "DOGE/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 10,
-        "amount_per_grid": 50,
-        "grid_spread": 0.3
+        "grids_quantity": 15,
+        "amount_per_grid": 40,
+        "grid_spread": 0.2
       }
     }
   ]
