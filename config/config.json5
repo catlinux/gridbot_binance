@@ -47,7 +47,7 @@
     },
     {
       "symbol": "ADA/USDC",
-      "enabled": false,
+      "enabled": true,
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 50,

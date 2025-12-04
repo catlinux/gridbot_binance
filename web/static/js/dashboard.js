@@ -134,6 +134,70 @@ function renderDonut(domId, data, isCurrency = false) {
     });
 }
 
+function ensureTabExists(symbol) {
+    const safe = symbol.replace('/', '_');
+    const tabList = document.getElementById('mainTabs');
+    const tabContent = document.getElementById('mainTabsContent');
+    
+    if (document.getElementById(`content-${safe}`)) return;
+
+    const li = document.createElement('li');
+    li.className = 'nav-item';
+    li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
+    tabList.appendChild(li);
+
+    const div = document.createElement('div');
+    div.className = 'tab-pane fade';
+    div.id = `content-${safe}`;
+    
+    // AFEGIT: Balance Sesión i Histórico a la llista
+    div.innerHTML = `
+        <div class="row">
+            <div class="col-lg-8 mb-3">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <span>Gráfico Precio</span>
+                            <div class="btn-group ms-3" role="group">
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1m')">1m</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('5m')">5m</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn active" onclick="setTimeframe('15m')">15m</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1h')">1h</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('4h')">4h</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1d')">1d</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1w')">1w</button>
+                            </div>
+                        </div>
+                        <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
+                    </div>
+                    <div class="card-body p-1"><div id="chart-${safe}" class="chart-container"></div></div>
+                </div>
+            </div>
+            <div class="col-lg-4 mb-3">
+                <div class="card h-100">
+                    <div class="card-header">Estado del Grid</div>
+                    <div class="card-body">
+                        <div class="row g-2 text-center mb-4">
+                            <div class="col-6"><div class="bg-buy p-3 rounded"><small class="d-block fw-bold mb-1">COMPRAS</small><b class="fs-3" id="count-buy-${safe}">0</b></div></div>
+                            <div class="col-6"><div class="bg-sell p-3 rounded"><small class="d-block fw-bold mb-1">VENTAS</small><b class="fs-3" id="count-sell-${safe}">0</b></div></div>
+                        </div>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between"><span>Próx. Compra</span><b class="text-buy" id="next-buy-${safe}">--</b></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Próx. Venta</span><b class="text-sell" id="next-sell-${safe}">--</b></li>
+                            <li class="list-group-item d-flex justify-content-between mt-3 bg-light"><strong>Balance Sesión</strong><b id="sess-pnl-${safe}">--</b></li>
+                            <li class="list-group-item d-flex justify-content-between bg-light"><strong>Balance Global</strong><b id="glob-pnl-${safe}">--</b></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Órdenes Activas</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-striped mb-0"><thead class="table-light"><tr><th>Tipo</th><th>Precio</th><th>Volumen</th></tr></thead><tbody id="orders-${safe}"></tbody></table></div></div></div>
+            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Histórico de Operaciones</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div></div></div>
+        </div>`;
+    tabContent.appendChild(div);
+}
+
 async function loadGlobalOrders() {
     try {
         const res = await fetch('/api/orders');
@@ -229,6 +293,12 @@ async function loadHome() {
         const res = await fetch('/api/status');
         const data = await res.json();
         
+        if (data.active_pairs && data.active_pairs.length > 0) {
+            data.active_pairs.forEach(sym => {
+                ensureTabExists(sym);
+            });
+        }
+        
         document.getElementById('status-badge').innerText = data.status === 'Running' ? 'OPERATIVO' : 'DETENIDO';
         document.getElementById('status-badge').className = data.status === 'Running' ? 'badge bg-success' : 'badge bg-danger';
         document.getElementById('total-balance').innerText = `${fmtUSDC(data.total_usdc_value)} USDC`;
@@ -304,6 +374,10 @@ async function loadSymbol(symbol) {
         document.getElementById(`next-buy-${safe}`).innerText = buys.length ? fmtPrice(buys[0].price) : '-';
         document.getElementById(`next-sell-${safe}`).innerText = sells.length ? fmtPrice(sells[0].price) : '-';
         
+        // ACTUALITZEM ELS NOUS CAMPS DE BALANÇ
+        updateColorValue(`sess-pnl-${safe}`, data.session_pnl, ' $');
+        updateColorValue(`glob-pnl-${safe}`, data.global_pnl, ' $');
+        
         const allOrders = [...sells.reverse(), ...buys];
         document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase() === 'BUY' ? 'COMPRA' : 'VENTA'}</b></td><td>${fmtPrice(o.price)}</td><td>${fmtCrypto(o.amount)}</td></tr>`).join('');
         document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side === 'buy' ? 'COMPRA' : 'VENTA'}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`).join('');
@@ -322,24 +396,19 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     const candlesData = data.map(i => [i[0], parseFloat(i[1]), parseFloat(i[2]), parseFloat(i[3]), parseFloat(i[4])]);
     const currentPrice = candlesData[candlesData.length - 1][4];
     
-    // Filtrem dades vàlides per al zoom (evitar espelmes 0 o errors)
     const validData = candlesData.filter(d => d[4] > currentPrice * 0.1);
 
     // --- CÀLCUL DEL RANG Y MANUAL ---
-    // Recollim TOTS els preus rellevants: Màxims i Mínims de les espelmes + Preus de les ordres
     let allPrices = [];
     validData.forEach(d => {
         allPrices.push(d[3]); // Low
         allPrices.push(d[4]); // High
     });
-    // Afegim els preus de les ordres al càlcul del rang, per assegurar que es vegin
     activeOrders.forEach(o => allPrices.push(parseFloat(o.price)));
     
-    // Calculem mínim i màxim absoluts del que hem de dibuixar
     let yMin = Math.min(...allPrices);
     let yMax = Math.max(...allPrices);
     
-    // Afegim un petit marge (padding) del 0.2% dalt i baix perquè no toqui les vores
     const padding = (yMax - yMin) * 0.002;
     yMin = yMin - padding;
     yMax = yMax + padding;
@@ -352,7 +421,6 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
         silent: true
     }));
 
-    // Tornem a les línies senceres (NO segmentades), però assegurant parseFloat
     const orderMarkLines = activeOrders.map(o => ({
         yAxis: parseFloat(o.price),
         lineStyle: {
@@ -362,7 +430,7 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
         },
         label: {
             show: true,
-            position: 'end', // Tornem a posar-ho al final (dreta)
+            position: 'end', 
             formatter: (o.side === 'buy' ? 'COMPRA' : 'VENTA') + ' ' + fmtPrice(o.price),
             color: '#fff',
             backgroundColor: o.side === 'buy' ? '#0ecb81' : '#f6465d',
@@ -411,7 +479,6 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
         yAxis: { 
             scale: true, 
             position: 'right', 
-            // AQUI ESTÀ EL TRUC: Forcem el rang manualment perquè ECharts no comprimeixi
             min: yMin,
             max: yMax,
             splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
@@ -447,49 +514,10 @@ async function init() {
         const res = await fetch('/api/status');
         if (!res.ok) return;
         const data = await res.json();
-        const tabList = document.getElementById('mainTabs');
-        const tabContent = document.getElementById('mainTabsContent');
-
+        
         if (!initialized && data.active_pairs.length > 0) {
             data.active_pairs.forEach(sym => {
-                const safe = sym.replace('/', '_');
-                const li = document.createElement('li');
-                li.className = 'nav-item';
-                li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${sym}')">${sym}</button>`;
-                tabList.appendChild(li);
-
-                const div = document.createElement('div');
-                div.className = 'tab-pane fade';
-                div.id = `content-${safe}`;
-                div.innerHTML = `
-                    <div class="row">
-                        <div class="col-lg-8 mb-3">
-                            <div class="card h-100">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    <div class="d-flex align-items-center">
-                                        <span>Gráfico Precio</span>
-                                        <div class="btn-group ms-3" role="group">
-                                            <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1m')">1m</button>
-                                            <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('5m')">5m</button>
-                                            <button type="button" class="btn btn-outline-secondary tf-btn active" onclick="setTimeframe('15m')">15m</button>
-                                            <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1h')">1h</button>
-                                            <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('4h')">4h</button>
-                                            <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1d')">1d</button>
-                                            <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1w')">1w</button>
-                                        </div>
-                                    </div>
-                                    <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
-                                </div>
-                                <div class="card-body p-1"><div id="chart-${safe}" class="chart-container"></div></div>
-                            </div>
-                        </div>
-                        <div class="col-lg-4 mb-3"><div class="card h-100"><div class="card-header">Estado del Grid</div><div class="card-body"><div class="row g-2 text-center mb-4"><div class="col-6"><div class="bg-buy p-3 rounded"><small class="d-block fw-bold mb-1">COMPRAS</small><b class="fs-3" id="count-buy-${safe}">0</b></div></div><div class="col-6"><div class="bg-sell p-3 rounded"><small class="d-block fw-bold mb-1">VENTAS</small><b class="fs-3" id="count-sell-${safe}">0</b></div></div></div><ul class="list-group list-group-flush"><li class="list-group-item d-flex justify-content-between"><span>Próx. Compra</span><b class="text-buy" id="next-buy-${safe}">--</b></li><li class="list-group-item d-flex justify-content-between"><span>Próx. Venta</span><b class="text-sell" id="next-sell-${safe}">--</b></li></ul></div></div></div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Órdenes Activas</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-striped mb-0"><thead class="table-light"><tr><th>Tipo</th><th>Precio</th><th>Volumen</th></tr></thead><tbody id="orders-${safe}"></tbody></table></div></div></div>
-                        <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Histórico de Operaciones</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div></div></div>
-                    </div>`;
-                tabContent.appendChild(div);
+                ensureTabExists(sym);
             });
             initialized = true;
         }
