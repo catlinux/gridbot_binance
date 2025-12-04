@@ -38,7 +38,7 @@
     },
     {
       "symbol": "SOL/USDC",
-      "enabled": false,
+      "enabled": true,
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 80,
@@ -47,7 +47,7 @@
     },
     {
       "symbol": "ADA/USDC",
-      "enabled": true,
+      "enabled": false,
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 50,

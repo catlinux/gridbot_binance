@@ -24,8 +24,7 @@ class GridBot:
         self.active_pairs = list(self.pairs_map.keys())
 
     def _data_collector_loop(self):
-        # Aquest log només surt un cop al principi
-        log.info("Colector de datos iniciado (Background).")
+        log.info("Iniciando colector de datos en segundo plano...")
         while self.is_running:
             current_pairs = list(self.active_pairs)
             for symbol in current_pairs:
@@ -52,10 +51,7 @@ class GridBot:
         params = self._get_params(symbol)
         quantity = params['grids_quantity']
         spread_percent = params['grid_spread'] / 100 
-        
-        # Canviat a DEBUG o eliminat per no embrutar, només surt si es recalcula
-        # log.info(f"Calculando rejilla {symbol}...") 
-        
+        log.info(f"Calculando rejilla {symbol}. Spread: {params['grid_spread']}% | Niveles: {quantity}")
         levels = []
         for i in range(1, int(quantity / 2) + 1):
             levels.append(current_price * (1 - (spread_percent * i))) 
@@ -87,7 +83,6 @@ class GridBot:
         if current_price is None or open_orders is None: return 
 
         if symbol not in self.levels:
-            log.info(f"[{symbol}] Generando nueva rejilla a {current_price} USDC")
             self.levels[symbol] = self._generate_fixed_levels(symbol, current_price)
 
         my_levels = self.levels[symbol]
@@ -107,7 +102,6 @@ class GridBot:
                 if math.isclose(o['price'], level_price, rel_tol=1e-5):
                     if o['side'] == target_side: exists = True
                     else:
-                        log.warning(f"[{symbol}] Orden fuera de rango. Cancelando...")
                         self.connector.exchange.cancel_order(o['id'], symbol)
                         exists = False 
                     break
@@ -116,7 +110,6 @@ class GridBot:
             amount = self._get_amount_for_level(symbol, level_price)
             if amount == 0: continue
 
-            # Comprovacions de saldo silencioses (només log si realment anem a posar l'ordre)
             if target_side == 'buy':
                 balance = self.connector.get_asset_balance(quote_asset)
                 if balance < amount * level_price: continue
@@ -128,13 +121,10 @@ class GridBot:
                      try: amount = float(self.connector.exchange.amount_to_precision(symbol, balance))
                      except: pass
 
-            # Aquest és l'únic moment que volem soroll: quan es posa una ordre
-            # La funció place_order ja fa el log.trade
+            log.warning(f"[{symbol}] Creando orden {target_side} @ {level_price}")
             self.connector.place_order(symbol, target_side, amount, level_price)
 
     def _handle_smart_reload(self):
-        # Aquest missatge sí que és important, usem warning (groc) o success (verd)
-        print() # Salt de línia per separar del status loop
         log.warning("🔄 CONFIGURACIÓN ACTUALIZADA: Analizando cambios...")
         old_map = copy.deepcopy(self.pairs_map)
         self.config = self.connector.config
@@ -162,10 +152,9 @@ class GridBot:
                     log.info(f"🔒 {symbol}: Reservados {total_holding} {base_asset}.")
                 self.connector.cancel_all_orders(symbol)
                 if symbol in self.levels: del self.levels[symbol]
-        log.success("Recarga completada. Volviendo a monitorización.")
+        log.info("✅ Recarga inteligente completada.")
 
     def manual_close_order(self, symbol, order_id, side, amount):
-        print() # Salt de línia visual
         log.warning(f"MANUAL: Cerrando orden {order_id} ({side}) en {symbol}...")
         res = self.connector.cancel_order(order_id, symbol)
         if side == 'buy':
@@ -187,15 +176,8 @@ class GridBot:
         log.warning("Limpiando órdenes antiguas iniciales...")
         for symbol in self.active_pairs:
             self.connector.cancel_all_orders(symbol)
-        time.sleep(2)
-        
-        log.info("📸 Tomando instantánea del valor de la cartera...")
-        initial_equity = self.connector.get_estimated_portfolio_value(self.active_pairs)
-        self.db.set_session_start_balance(initial_equity)
-        self.db.set_global_start_balance_if_not_exists(initial_equity)
-        
-        log.success(f"Valor Total Cartera: {initial_equity:.2f} USDC")
-
+        log.info("Esperando 5 segundos post-limpieza...")
+        time.sleep(5)
         self.is_running = True
         data_thread = threading.Thread(target=self._data_collector_loop, daemon=True)
         data_thread.start()
@@ -207,23 +189,14 @@ class GridBot:
     def _monitoring_loop(self):
         delay = self.config['system']['cycle_delay']
         while self.is_running:
-            # 1. Check Config
             if self.connector.check_and_reload_config():
                 self._handle_smart_reload()
-            
-            # 2. Check Grid Logic
             for symbol in self.active_pairs:
                 self._ensure_grid_consistency(symbol)
-            
-            # 3. IMPRIMIR ESTAT COMPACTE (Això substitueix els logs repetitius)
-            # Mostrem: Parells actius | Hora
-            pairs_str = ", ".join([s.split('/')[0] for s in self.active_pairs])
-            log.status(f"Escaneando {len(self.active_pairs)} pares: [{pairs_str}]... Esperando {delay}s")
-            
             time.sleep(delay)
 
     def _shutdown(self):
         self.is_running = False
-        print() # Salt de línia obligatori després del status loop
+        print()
         log.warning("--- DETENIENDO GRIDBOT ---")
         log.success("Bot detenido.")
