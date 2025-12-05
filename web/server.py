@@ -55,6 +55,11 @@ async def read_root(request: Request):
 async def get_status():
     if not bot_instance: return {"status": "Offline"}
     
+    # Determinem l'estat textual
+    status_text = "Stopped"
+    if bot_instance.is_running:
+        status_text = "Paused" if bot_instance.is_paused else "Running"
+
     prices = db.get_all_prices()
     portfolio = []
     current_total_equity = 0.0
@@ -85,45 +90,43 @@ async def get_status():
                 current_total_equity += val
         except: pass
 
-    # --- PnL GLOBAL (Equity Real) ---
     global_start = db.get_global_start_balance()
     if global_start == 0: global_start = current_total_equity
     global_pnl_total = current_total_equity - global_start
 
-    # Obtenir estadístiques
     global_stats = db.get_stats(from_timestamp=0)
     global_cash_flow = global_stats['per_coin_stats']['cash_flow']
     global_trades_map = global_stats['per_coin_stats']['trades']
     
     session_start_ts = bot_instance.global_start_time
-    session_uptime_str = format_uptime(time.time() - session_start_ts)
+    session_stats = db.get_stats(from_timestamp=session_start_ts)
+    session_cash_flow = session_stats['per_coin_stats']['cash_flow']
+    session_qty_delta = session_stats['per_coin_stats']['qty_delta']
+
     first_run_ts = db.get_first_run_timestamp()
     total_uptime_str = format_uptime(time.time() - first_run_ts)
+    session_uptime_str = format_uptime(time.time() - session_start_ts)
 
-    # Preparar dades taula
     strategies_data = []
-    
-    # Ara el "session PnL" serà igual al global després d'un reset, ja que el reset
-    # posa el comptador a 0. No cal calcular inventari complex aquí si ja tenim la foto inicial.
-    # Per simplificar a la taula principal, usarem la mateixa lògica que al detall:
-    # PnL = Valor Actual - Valor Inicial + CashFlow.
-    
-    accumulated_pnl = 0.0
+    accumulated_session_pnl = 0.0
 
     for symbol in bot_instance.active_pairs:
         strat_conf = bot_instance.pairs_map.get(symbol, {}).get('strategy', {})
         trades_count = global_trades_map.get(symbol, 0)
+        curr_price = current_prices_map.get(symbol, 0.0)
         
-        # Recuperar valor actual i valor inicial snapshot
+        cf_global = global_cash_flow.get(symbol, 0.0)
         curr_val = holding_values.get(symbol, 0.0)
-        init_val = db.get_coin_initial_balance(symbol) # Aquest es el clau
-        cf = global_cash_flow.get(symbol, 0.0)
+        init_val = db.get_coin_initial_balance(symbol)
         
-        # Fórmula Mágica: Valor Actual - Valor Inicial + Cash Flow (Trades)
-        # Si no hi ha trades (cf=0) i el preu no es mou, 100 - 100 + 0 = 0.
-        strat_pnl = curr_val - init_val + cf
+        strat_pnl_global = curr_val - init_val + cf_global
         
-        accumulated_pnl += strat_pnl
+        cf_session = session_cash_flow.get(symbol, 0.0)
+        qty_change = session_qty_delta.get(symbol, 0.0)
+        inventory_value_change = qty_change * curr_price
+        strat_pnl_session = inventory_value_change + cf_session
+        
+        accumulated_session_pnl += strat_pnl_session
 
         strategies_data.append({
             "symbol": symbol,
@@ -131,24 +134,24 @@ async def get_status():
             "amount": strat_conf.get('amount_per_grid', '-'),
             "spread": strat_conf.get('grid_spread', '-'),
             "total_trades": trades_count,
-            "total_pnl": round(strat_pnl, 2),  
-            "session_pnl": round(strat_pnl, 2) # Coincident després de reset
+            "total_pnl": round(strat_pnl_global, 2),  
+            "session_pnl": round(strat_pnl_session, 2)
         })
 
     return {
-        "status": "Running" if bot_instance.is_running else "Stopped",
+        "status": status_text, # "Running", "Paused", "Stopped"
         "active_pairs": bot_instance.active_pairs,
         "balance_usdc": round(usdc_balance, 2),
         "total_usdc_value": round(current_total_equity, 2),
         "portfolio_distribution": portfolio,
-        "session_trades_distribution": global_stats['trades_distribution'], # Igual al reset
+        "session_trades_distribution": global_stats['trades_distribution'], 
         "global_trades_distribution": global_stats['trades_distribution'],
         "strategies": strategies_data,
         "stats": {
             "session": {
-                "trades": global_stats['trades'],
-                "profit": round(accumulated_pnl, 2), 
-                "best_coin": global_stats['best_coin'],
+                "trades": session_stats['trades'],
+                "profit": round(accumulated_session_pnl, 2),
+                "best_coin": session_stats['best_coin'],
                 "uptime": session_uptime_str
             },
             "global": {
@@ -211,32 +214,32 @@ async def get_pair_details(symbol: str, timeframe: str = '15m'):
         dt = datetime.fromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M')
         chart_data.append([dt, candle[1], candle[4], candle[3], candle[2]])
 
-    # --- CÀLCUL PnL PER PESTANYA ---
-    # Utilitzem la mateixa lògica robusta: Current - Initial + CashFlow
-    
     pnl_value = 0.0
+    global_pnl = 0.0
     
     if bot_instance:
         current_price = data['price']
         if current_price == 0: 
             current_price = bot_instance.connector.fetch_current_price(symbol)
 
-        # 1. Cash Flow acumulat (Trades)
         global_stats = db.get_stats(from_timestamp=0)
-        cf = global_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
+        cf_global = global_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
         
-        # 2. Valor Actual
         base = symbol.split('/')[0]
         qty_held = 0.0
         try: qty_held = bot_instance.connector.get_total_balance(base)
         except: pass
         current_val = qty_held * current_price
-        
-        # 3. Valor Inicial (Snapshot)
         init_val = db.get_coin_initial_balance(symbol)
         
-        # Fórmula
-        pnl_value = current_val - init_val + cf
+        global_pnl = current_val - init_val + cf_global
+        
+        session_start_ts = bot_instance.global_start_time
+        session_stats = db.get_stats(from_timestamp=session_start_ts)
+        cf_session = session_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
+        qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
+        
+        pnl_value = (qty_delta * current_price) + cf_session
 
     return {
         "symbol": symbol,
@@ -246,7 +249,7 @@ async def get_pair_details(symbol: str, timeframe: str = '15m'):
         "chart_data": chart_data,
         "grid_lines": data['grid_levels'],
         "session_pnl": round(pnl_value, 2), 
-        "global_pnl": round(pnl_value, 2)   
+        "global_pnl": round(global_pnl, 2)   
     }
 
 @app.get("/api/config")
@@ -277,15 +280,41 @@ async def reset_stats_api():
         db.reset_all_statistics()
         if bot_instance:
             bot_instance.global_start_time = time.time()
-            
-            # 1. Reset Patrimoni Global
             current_equity = bot_instance.calculate_total_equity()
             db.set_session_start_balance(current_equity)
             db.set_global_start_balance_if_not_exists(current_equity)
-            
-            # 2. Reset Patrimoni Individual per Moneda (NOU)
             bot_instance.capture_initial_snapshots()
             
         return {"status": "success", "message": "Estadísticas reiniciadas correctamente."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- ENDPOINTS DE PÀNIC / CONTROL ---
+
+@app.post("/api/panic/stop")
+async def panic_stop_api():
+    if bot_instance:
+        bot_instance.panic_stop() # Això ara posa is_paused = True
+        return {"status": "success", "message": "Bot PAUSADO. No se ejecutarán operaciones."}
+    return {"status": "error", "detail": "Bot no inicializado"}
+
+@app.post("/api/panic/start")
+async def panic_start_api():
+    if bot_instance:
+        bot_instance.resume_bot() # Això posa is_paused = False
+        return {"status": "success", "message": "Bot REANUDADO. Operaciones activas."}
+    return {"status": "error", "detail": "Bot no inicializado"}
+
+@app.post("/api/panic/cancel_all")
+async def panic_cancel_all_api():
+    if bot_instance:
+        count = bot_instance.panic_cancel_all()
+        return {"status": "success", "message": f"Se han intentado cancelar órdenes en {count} pares."}
+    return {"status": "error", "detail": "Bot no inicializado"}
+
+@app.post("/api/panic/sell_all")
+async def panic_sell_all_api():
+    if bot_instance:
+        count = bot_instance.panic_sell_all()
+        return {"status": "success", "message": f"Se ha ejecutado venta a mercado en {count} monedas."}
+    return {"status": "error", "detail": "Bot no inicializado"}

@@ -149,8 +149,6 @@ function ensureTabExists(symbol) {
     const div = document.createElement('div');
     div.className = 'tab-pane fade';
     div.id = `content-${safe}`;
-    
-    // AFEGIT: Balance Sesión i Histórico a la llista
     div.innerHTML = `
         <div class="row">
             <div class="col-lg-8 mb-3">
@@ -299,8 +297,18 @@ async function loadHome() {
             });
         }
         
-        document.getElementById('status-badge').innerText = data.status === 'Running' ? 'OPERATIVO' : 'DETENIDO';
-        document.getElementById('status-badge').className = data.status === 'Running' ? 'badge bg-success' : 'badge bg-danger';
+        const badge = document.getElementById('status-badge');
+        if (data.status === 'Running') {
+            badge.innerText = 'OPERATIVO';
+            badge.className = 'badge bg-success me-3';
+        } else if (data.status === 'Paused') {
+            badge.innerText = 'PAUSADO';
+            badge.className = 'badge bg-warning text-dark me-3';
+        } else {
+            badge.innerText = 'DETENIDO';
+            badge.className = 'badge bg-danger me-3';
+        }
+
         document.getElementById('total-balance').innerText = `${fmtUSDC(data.total_usdc_value)} USDC`;
 
         updateColorValue('dash-profit-session', data.stats.session.profit, ' $');
@@ -374,7 +382,6 @@ async function loadSymbol(symbol) {
         document.getElementById(`next-buy-${safe}`).innerText = buys.length ? fmtPrice(buys[0].price) : '-';
         document.getElementById(`next-sell-${safe}`).innerText = sells.length ? fmtPrice(sells[0].price) : '-';
         
-        // ACTUALITZEM ELS NOUS CAMPS DE BALANÇ
         updateColorValue(`sess-pnl-${safe}`, data.session_pnl, ' $');
         updateColorValue(`glob-pnl-${safe}`, data.global_pnl, ' $');
         
@@ -392,17 +399,15 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     let chart = echarts.getInstanceByDom(dom);
     if (!chart) chart = echarts.init(dom);
 
-    // Convertim dades a float segur
     const candlesData = data.map(i => [i[0], parseFloat(i[1]), parseFloat(i[2]), parseFloat(i[3]), parseFloat(i[4])]);
     const currentPrice = candlesData[candlesData.length - 1][4];
     
     const validData = candlesData.filter(d => d[4] > currentPrice * 0.1);
 
-    // --- CÀLCUL DEL RANG Y MANUAL ---
     let allPrices = [];
     validData.forEach(d => {
-        allPrices.push(d[3]); // Low
-        allPrices.push(d[4]); // High
+        allPrices.push(d[3]); 
+        allPrices.push(d[4]); 
     });
     activeOrders.forEach(o => allPrices.push(parseFloat(o.price)));
     
@@ -412,7 +417,6 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     const padding = (yMax - yMin) * 0.002;
     yMin = yMin - padding;
     yMax = yMax + padding;
-    // --------------------------------
 
     const gridMarkLines = gridLines.map(p => ({
         yAxis: parseFloat(p),
@@ -509,13 +513,14 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     chart.setOption(option);
 }
 
+// --- DEFINICIÓ DE LA FUNCIÓ INIT (ARA SÍ) ---
 async function init() {
     try {
         const res = await fetch('/api/status');
         if (!res.ok) return;
         const data = await res.json();
         
-        if (!initialized && data.active_pairs.length > 0) {
+        if (!initialized && data.active_pairs && data.active_pairs.length > 0) {
             data.active_pairs.forEach(sym => {
                 ensureTabExists(sym);
             });
@@ -525,26 +530,54 @@ async function init() {
     } catch (e) { console.error("Error init:", e); }
 }
 
+// --- FUNCIONS DE PÀNIC ---
+
 async function resetStatistics() {
     if (!confirm("⚠️ ATENCIÓN ⚠️\n\n¿Estás seguro de que quieres borrar TODAS las estadísticas?\n\nSe pondrá a cero el PnL, el historial de operaciones y los tiempos de sesión.\nEsta acción no se puede deshacer.")) {
         return;
     }
-
     try {
         const res = await fetch('/api/reset_stats', { method: 'POST' });
         const data = await res.json();
-        
-        if (res.ok) {
-            alert(data.message);
-            location.reload(); 
-        } else {
-            alert("Error: " + data.detail);
-        }
-    } catch (e) {
-        console.error(e);
-        alert("Error de conexión con el servidor.");
-    }
+        if (res.ok) { alert(data.message); location.reload(); } else { alert("Error: " + data.detail); }
+    } catch (e) { alert("Error de conexión."); }
 }
 
+async function panicStop() {
+    if (!confirm("✋ ¿PAUSAR EL BOT?\n\nSe detendrá la lógica de trading para TODAS las monedas.\nNo se pondrán nuevas órdenes.")) return;
+    try {
+        const res = await fetch('/api/panic/stop', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) { alert(data.message); loadHome(); } else { alert("Error: " + data.detail); }
+    } catch (e) { alert("Error de conexión."); }
+}
+
+async function panicStart() {
+    try {
+        const res = await fetch('/api/panic/start', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) { alert(data.message); loadHome(); } else { alert("Error: " + data.detail); }
+    } catch (e) { alert("Error de conexión."); }
+}
+
+async function panicCancel() {
+    if (!confirm("🗑️ ¿CANCELAR TODO?\n\nSe borrarán TODAS las órdenes limit abiertas en el Exchange para las monedas activas.")) return;
+    try {
+        const res = await fetch('/api/panic/cancel_all', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) { alert(data.message); loadHome(); } else { alert("Error: " + data.detail); }
+    } catch (e) { alert("Error de conexión."); }
+}
+
+async function panicSell() {
+    if (!confirm("🔥 ¡PELIGRO! ¿VENDER TODO A USDC?\n\n1. Se cancelarán todas las órdenes.\n2. Se venderán todas las criptomonedas activas a precio de mercado.\n\n¿Estás 100% seguro?")) return;
+    try {
+        const res = await fetch('/api/panic/sell_all', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) { alert(data.message); loadHome(); } else { alert("Error: " + data.detail); }
+    } catch (e) { alert("Error de conexión."); }
+}
+
+// INICI
 init();
 setInterval(() => { if (currentMode === 'home') { loadHome(); } else if (currentMode !== 'config') loadSymbol(currentMode); }, 4000);

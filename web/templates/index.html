@@ -192,7 +192,8 @@
                         <i class="fa-solid fa-triangle-exclamation me-2"></i> Zona de Peligro
                     </div>
                     <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
+                        
+                        <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3">
                             <div>
                                 <h6 class="text-danger fw-bold">Reiniciar Estadísticas</h6>
                                 <p class="mb-0 small text-muted">Esta acción borrará el historial de beneficios, trades y contadores de tiempo. No afecta a las órdenes abiertas ni a la configuración.</p>
@@ -201,6 +202,34 @@
                                 <i class="fa-solid fa-trash-can me-2"></i> RESET TOTAL
                             </button>
                         </div>
+
+                        <div class="row">
+                            <div class="col-md-3 mb-2">
+                                <button class="btn btn-warning w-100 fw-bold" onclick="panicStop()">
+                                    <i class="fa-solid fa-pause me-2"></i> PAUSAR BOT
+                                </button>
+                                <div class="form-text text-center">Detiene el trading temporalmente.</div>
+                            </div>
+                            <div class="col-md-3 mb-2">
+                                <button class="btn btn-success w-100 fw-bold" onclick="panicStart()">
+                                    <i class="fa-solid fa-play me-2"></i> REANUDAR BOT
+                                </button>
+                                <div class="form-text text-center">Vuelve a activar el trading.</div>
+                            </div>
+                            <div class="col-md-3 mb-2">
+                                <button class="btn btn-danger w-100 fw-bold" onclick="panicCancel()">
+                                    <i class="fa-solid fa-ban me-2"></i> CANCELAR ÓRDENES
+                                </button>
+                                <div class="form-text text-center">Borra órdenes del Exchange.</div>
+                            </div>
+                            <div class="col-md-3 mb-2">
+                                <button class="btn btn-dark w-100 fw-bold border-danger text-danger" onclick="panicSell()">
+                                    <i class="fa-solid fa-fire me-2"></i> VENDER TODO
+                                </button>
+                                <div class="form-text text-center">Cancela y vende a mercado.</div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
                 

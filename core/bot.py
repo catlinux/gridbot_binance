@@ -16,6 +16,7 @@ class GridBot:
         self._refresh_pairs_map()
         self.levels = {} 
         self.is_running = False
+        self.is_paused = False # NOVA VARIABLE D'ESTAT
         self.reserved_inventory = {} 
         self.global_start_time = time.time()
 
@@ -26,6 +27,11 @@ class GridBot:
     def _data_collector_loop(self):
         log.info("Iniciando colector de datos en segundo plano...")
         while self.is_running:
+            # SI ESTÀ PAUSAT, ESPEREM I NO FEM RES
+            if self.is_paused:
+                time.sleep(1)
+                continue
+
             current_pairs = list(self.active_pairs)
             for symbol in current_pairs:
                 try:
@@ -171,7 +177,6 @@ class GridBot:
                 return False
 
     def calculate_total_equity(self):
-        """Calcula el valor TOTAL de la cartera en USDC (Crypto + USDC lliure)"""
         total_usdc = 0.0
         try:
             total_usdc += self.connector.get_total_balance('USDC')
@@ -186,9 +191,7 @@ class GridBot:
             except: pass
         return total_usdc
 
-    # NOU MÈTODE PER SNAPSHOT INDIVIDUAL
     def capture_initial_snapshots(self):
-        """Guarda el valor inicial en USDC de cada moneda individualmente"""
         for symbol in self.active_pairs:
             base = symbol.split('/')[0]
             try:
@@ -199,21 +202,63 @@ class GridBot:
             except Exception as e:
                 log.error(f"Error snapshot {symbol}: {e}")
 
+    # --- ACCIONS DE PÀNIC / CONTROL ---
+    
+    def panic_stop(self):
+        """Pausa el bot sense tancar el programa"""
+        log.warning("⛔ ACCIÓN DE USUARIO: PAUSANDO BOT...")
+        self.is_paused = True
+        return True
+
+    def resume_bot(self):
+        """Reactiva el bot"""
+        log.success("▶️ ACCIÓN DE USUARIO: REANUDANDO BOT...")
+        self.is_paused = False
+        return True
+
+    def panic_cancel_all(self):
+        log.warning("⛔ ACCIÓN DE PÁNICO: Cancelando todas las órdenes...")
+        count = 0
+        for symbol in self.active_pairs:
+            self.connector.cancel_all_orders(symbol)
+            grid_levels = self.levels.get(symbol, [])
+            self.db.update_grid_status(symbol, [], grid_levels)
+            count += 1
+        return count
+
+    def panic_sell_all(self):
+        log.warning("🔥 ACCIÓN DE PÁNICO: VENDIENDO TODO A USDC...")
+        sold_count = 0
+        self.panic_cancel_all()
+        time.sleep(2) 
+
+        for symbol in self.active_pairs:
+            try:
+                base_asset = symbol.split('/')[0]
+                amount = self.connector.get_asset_balance(base_asset)
+                price = self.connector.fetch_current_price(symbol)
+                value_usdc = amount * price
+                
+                if value_usdc > 2.0: 
+                    log.warning(f"Vendiendo {amount} {base_asset} a mercado...")
+                    self.connector.place_market_sell(symbol, amount)
+                    sold_count += 1
+                    time.sleep(0.5) 
+            except Exception as e:
+                log.error(f"Error Panic Sell {symbol}: {e}")
+        return sold_count
+
     def start(self):
         log.info("--- INICIANDO GRIDBOT PROFESSIONAL ---")
         self.connector.validate_connection()
         
-        # --- CÀLCUL INICIAL ---
         log.info("Calculando patrimonio inicial...")
         initial_equity = self.calculate_total_equity()
         log.info(f"💰 Patrimonio Inicial Total: {initial_equity:.2f} USDC")
         
         self.db.set_session_start_balance(initial_equity)
         self.db.set_global_start_balance_if_not_exists(initial_equity)
-        
-        # Guardar estat inicial de cada moneda
         self.capture_initial_snapshots()
-        # ----------------------
 
         log.warning("Limpiando órdenes antiguas iniciales...")
         for symbol in self.active_pairs:
@@ -221,6 +266,7 @@ class GridBot:
         log.info("Esperando 5 segundos post-limpieza...")
         time.sleep(5)
         self.is_running = True
+        self.is_paused = False # Assegurem que comença actiu
         data_thread = threading.Thread(target=self._data_collector_loop, daemon=True)
         data_thread.start()
         try:
@@ -231,6 +277,11 @@ class GridBot:
     def _monitoring_loop(self):
         delay = self.config['system']['cycle_delay']
         while self.is_running:
+            # CHEQUEIG DE PAUSA
+            if self.is_paused:
+                time.sleep(1)
+                continue
+
             if self.connector.check_and_reload_config():
                 self._handle_smart_reload()
             for symbol in self.active_pairs:
