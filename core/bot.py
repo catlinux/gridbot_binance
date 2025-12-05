@@ -6,6 +6,7 @@ import time
 import math
 import threading
 import copy
+from colorama import Fore, Style
 
 class GridBot:
     def __init__(self):
@@ -16,18 +17,18 @@ class GridBot:
         self._refresh_pairs_map()
         self.levels = {} 
         self.is_running = False
-        self.is_paused = False # NOVA VARIABLE D'ESTAT
+        self.is_paused = False 
         self.reserved_inventory = {} 
         self.global_start_time = time.time()
+        self.last_status_msg = "" # Per evitar parpadeig
 
     def _refresh_pairs_map(self):
         self.pairs_map = {p['symbol']: p for p in self.config['pairs'] if p['enabled']}
         self.active_pairs = list(self.pairs_map.keys())
 
     def _data_collector_loop(self):
-        log.info("Iniciando colector de datos en segundo plano...")
+        # Aquest fil ara serà silenciós a la consola, només actualitza DB
         while self.is_running:
-            # SI ESTÀ PAUSAT, ESPEREM I NO FEM RES
             if self.is_paused:
                 time.sleep(1)
                 continue
@@ -46,8 +47,9 @@ class GridBot:
                     trades = self.connector.fetch_my_trades(symbol, limit=10)
                     self.db.save_trades(trades)
                 except Exception: pass
-                time.sleep(1)
-            time.sleep(5)
+                time.sleep(1) # Petit descans entre monedes per no saturar API
+            
+            time.sleep(2) # Descans del cicle de dades
 
     def _get_params(self, symbol):
         pair_config = self.pairs_map.get(symbol, {})
@@ -57,7 +59,7 @@ class GridBot:
         params = self._get_params(symbol)
         quantity = params['grids_quantity']
         spread_percent = params['grid_spread'] / 100 
-        log.info(f"Calculando rejilla {symbol}. Spread: {params['grid_spread']}% | Niveles: {quantity}")
+        log.info(f"Calculando rejilla {symbol} ({current_price})...")
         levels = []
         for i in range(1, int(quantity / 2) + 1):
             levels.append(current_price * (1 - (spread_percent * i))) 
@@ -108,6 +110,7 @@ class GridBot:
                 if math.isclose(o['price'], level_price, rel_tol=1e-5):
                     if o['side'] == target_side: exists = True
                     else:
+                        # Silenciós, només loguegem la creació
                         self.connector.exchange.cancel_order(o['id'], symbol)
                         exists = False 
                     break
@@ -127,10 +130,12 @@ class GridBot:
                       try: amount = float(self.connector.exchange.amount_to_precision(symbol, balance))
                       except: pass
 
+            # AQUEST SÍ QUE EL VOLEM VEURE
             log.warning(f"[{symbol}] Creando orden {target_side} @ {level_price}")
             self.connector.place_order(symbol, target_side, amount, level_price)
 
     def _handle_smart_reload(self):
+        print() # Salt de línia per no trencar la barra d'estat
         log.warning("🔄 CONFIGURACIÓN ACTUALIZADA: Analizando cambios...")
         old_map = copy.deepcopy(self.pairs_map)
         self.config = self.connector.config
@@ -158,9 +163,10 @@ class GridBot:
                     log.info(f"🔒 {symbol}: Reservados {total_holding} {base_asset}.")
                 self.connector.cancel_all_orders(symbol)
                 if symbol in self.levels: del self.levels[symbol]
-        log.info("✅ Recarga inteligente completada.")
+        log.info("✅ Recarga completada.")
 
     def manual_close_order(self, symbol, order_id, side, amount):
+        print()
         log.warning(f"MANUAL: Cerrando orden {order_id} ({side}) en {symbol}...")
         res = self.connector.cancel_order(order_id, symbol)
         if side == 'buy':
@@ -205,18 +211,19 @@ class GridBot:
     # --- ACCIONS DE PÀNIC / CONTROL ---
     
     def panic_stop(self):
-        """Pausa el bot sense tancar el programa"""
+        print()
         log.warning("⛔ ACCIÓN DE USUARIO: PAUSANDO BOT...")
         self.is_paused = True
         return True
 
     def resume_bot(self):
-        """Reactiva el bot"""
+        print()
         log.success("▶️ ACCIÓN DE USUARIO: REANUDANDO BOT...")
         self.is_paused = False
         return True
 
     def panic_cancel_all(self):
+        print()
         log.warning("⛔ ACCIÓN DE PÁNICO: Cancelando todas las órdenes...")
         count = 0
         for symbol in self.active_pairs:
@@ -227,6 +234,7 @@ class GridBot:
         return count
 
     def panic_sell_all(self):
+        print()
         log.warning("🔥 ACCIÓN DE PÁNICO: VENDIENDO TODO A USDC...")
         sold_count = 0
         self.panic_cancel_all()
@@ -249,12 +257,12 @@ class GridBot:
         return sold_count
 
     def start(self):
-        log.info("--- INICIANDO GRIDBOT PROFESSIONAL ---")
+        log.info(f"{Fore.CYAN}--- INICIANDO GRIDBOT PROFESSIONAL ---{Style.RESET_ALL}")
         self.connector.validate_connection()
         
         log.info("Calculando patrimonio inicial...")
         initial_equity = self.calculate_total_equity()
-        log.info(f"💰 Patrimonio Inicial Total: {initial_equity:.2f} USDC")
+        log.info(f"💰 Patrimonio Inicial Total: {Fore.GREEN}{initial_equity:.2f} USDC{Fore.RESET}")
         
         self.db.set_session_start_balance(initial_equity)
         self.db.set_global_start_balance_if_not_exists(initial_equity)
@@ -263,12 +271,15 @@ class GridBot:
         log.warning("Limpiando órdenes antiguas iniciales...")
         for symbol in self.active_pairs:
             self.connector.cancel_all_orders(symbol)
-        log.info("Esperando 5 segundos post-limpieza...")
-        time.sleep(5)
+        
+        log.info("Arrancando motores...")
+        time.sleep(2)
+        
         self.is_running = True
-        self.is_paused = False # Assegurem que comença actiu
+        self.is_paused = False 
         data_thread = threading.Thread(target=self._data_collector_loop, daemon=True)
         data_thread.start()
+        
         try:
             self._monitoring_loop()
         except KeyboardInterrupt:
@@ -276,16 +287,31 @@ class GridBot:
 
     def _monitoring_loop(self):
         delay = self.config['system']['cycle_delay']
+        spin_chars = ["|", "/", "-", "\\"]
+        idx = 0
+        
         while self.is_running:
-            # CHEQUEIG DE PAUSA
+            # GESTIÓ DE LA BARRA D'ESTAT (Output net)
             if self.is_paused:
+                log.status(f"{Fore.YELLOW}PAUSADO{Fore.RESET} - Esperando comando de reanudación... {spin_chars[idx]}")
+                idx = (idx + 1) % 4
                 time.sleep(1)
                 continue
 
+            # Check config
             if self.connector.check_and_reload_config():
                 self._handle_smart_reload()
+            
+            # Lògica principal
             for symbol in self.active_pairs:
                 self._ensure_grid_consistency(symbol)
+            
+            # Actualització de la barra d'estat
+            # Mostrem el preu d'alguna moneda com a referència viva, o només "Running"
+            display_status = f"{Fore.GREEN}EN MARXA{Fore.RESET} | Monitorizando {len(self.active_pairs)} pares | {spin_chars[idx]}"
+            log.status(display_status)
+            idx = (idx + 1) % 4
+            
             time.sleep(delay)
 
     def _shutdown(self):

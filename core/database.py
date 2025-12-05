@@ -79,23 +79,17 @@ class BotDatabase:
         if row: return float(row[0])
         return 0.0
 
-    # --- NOU: SNAPSHOTS PER MONEDA ---
+    # --- SNAPSHOTS PER MONEDA ---
     def set_coin_initial_balance(self, symbol, value_usdc):
-        # Guardem un JSON amb tots els valors inicials
         conn = self._get_conn()
         cursor = conn.cursor()
-        
-        # Recuperem el diccionari actual
         cursor.execute("SELECT value FROM bot_info WHERE key='coins_initial_equity'")
         row = cursor.fetchone()
         data = {}
         if row:
             try: data = json.loads(row[0])
             except: pass
-        
-        # Actualitzem el simbol
         data[symbol] = value_usdc
-        
         cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('coins_initial_equity', json.dumps(data)))
         conn.commit()
         conn.close()
@@ -207,7 +201,7 @@ class BotDatabase:
     def get_stats(self, from_timestamp=0):
         conn = self._get_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT symbol, side, cost, fee_cost, amount FROM trade_history WHERE timestamp >= ?", (from_timestamp * 1000,))
+        cursor.execute("SELECT symbol, side, cost, fee_cost, amount FROM trade_history WHERE timestamp >= ?", (int(from_timestamp * 1000),))
         rows = cursor.fetchall()
         conn.close()
 
@@ -217,14 +211,12 @@ class BotDatabase:
         trades_per_coin = {} 
 
         for symbol, side, cost, fee, amount in rows:
-            # CASH FLOW
             val = cost if side == 'sell' else -cost
             net_val = val - (fee if fee else 0.0)
             
             if symbol not in cash_flow_per_coin: cash_flow_per_coin[symbol] = 0.0
             cash_flow_per_coin[symbol] += net_val
 
-            # INVENTORY DELTA
             if symbol not in qty_delta_per_coin: qty_delta_per_coin[symbol] = 0.0
             if side == 'buy':
                 qty_delta_per_coin[symbol] += amount
@@ -247,7 +239,7 @@ class BotDatabase:
         return {
             "trades": total_trades,
             "best_coin": best_coin,
-            "trades_distribution": trades_distribution,
+            "trades_distribution": trades_distribution, # Retornem distribució per MONEDA
             "per_coin_stats": {
                 "cash_flow": cash_flow_per_coin,
                 "qty_delta": qty_delta_per_coin,
@@ -275,14 +267,11 @@ class BotDatabase:
     def reset_all_statistics(self):
         conn = self._get_conn()
         cursor = conn.cursor()
-        
         cursor.execute("DELETE FROM trade_history")
-        
+        cursor.execute("DELETE FROM market_data")
         now = str(time.time())
-        # Eliminem també els snapshots individuals
         cursor.execute("DELETE FROM bot_info WHERE key IN ('first_run', 'global_start_balance', 'session_start_balance', 'coins_initial_equity')")
         cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', now))
-        
         conn.commit()
         conn.close()
         return True

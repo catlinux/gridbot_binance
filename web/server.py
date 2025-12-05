@@ -55,7 +55,6 @@ async def read_root(request: Request):
 async def get_status():
     if not bot_instance: return {"status": "Offline"}
     
-    # Determinem l'estat textual
     status_text = "Stopped"
     if bot_instance.is_running:
         status_text = "Paused" if bot_instance.is_paused else "Running"
@@ -81,13 +80,14 @@ async def get_status():
             price = prices.get(symbol, 0.0)
             if price == 0: price = bot_instance.connector.fetch_current_price(symbol)
             
-            current_prices_map[symbol] = price 
-            val = qty * price
-            holding_values[symbol] = val 
-            
-            if val > 0.5: 
-                portfolio.append({"name": base, "value": round(val, 2)})
-                current_total_equity += val
+            if price > 0:
+                current_prices_map[symbol] = price 
+                val = qty * price
+                holding_values[symbol] = val 
+                
+                if val > 0.5: 
+                    portfolio.append({"name": base, "value": round(val, 2)})
+                    current_total_equity += val
         except: pass
 
     global_start = db.get_global_start_balance()
@@ -119,12 +119,22 @@ async def get_status():
         curr_val = holding_values.get(symbol, 0.0)
         init_val = db.get_coin_initial_balance(symbol)
         
-        strat_pnl_global = curr_val - init_val + cf_global
-        
-        cf_session = session_cash_flow.get(symbol, 0.0)
-        qty_change = session_qty_delta.get(symbol, 0.0)
-        inventory_value_change = qty_change * curr_price
-        strat_pnl_session = inventory_value_change + cf_session
+        if curr_price == 0:
+            strat_pnl_global = 0.0
+            strat_pnl_session = 0.0
+        else:
+            if init_val == 0.0 and curr_val > 0:
+                init_val = curr_val
+            
+            strat_pnl_global = curr_val - init_val + cf_global
+            
+            if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
+                 strat_pnl_global = 0.0
+
+            cf_session = session_cash_flow.get(symbol, 0.0)
+            qty_change = session_qty_delta.get(symbol, 0.0)
+            inventory_value_change = qty_change * curr_price
+            strat_pnl_session = inventory_value_change + cf_session
         
         accumulated_session_pnl += strat_pnl_session
 
@@ -139,12 +149,12 @@ async def get_status():
         })
 
     return {
-        "status": status_text, # "Running", "Paused", "Stopped"
+        "status": status_text,
         "active_pairs": bot_instance.active_pairs,
         "balance_usdc": round(usdc_balance, 2),
         "total_usdc_value": round(current_total_equity, 2),
         "portfolio_distribution": portfolio,
-        "session_trades_distribution": global_stats['trades_distribution'], 
+        "session_trades_distribution": session_stats['trades_distribution'], # RESTAURAT A MONEDES
         "global_trades_distribution": global_stats['trades_distribution'],
         "strategies": strategies_data,
         "stats": {
@@ -222,24 +232,28 @@ async def get_pair_details(symbol: str, timeframe: str = '15m'):
         if current_price == 0: 
             current_price = bot_instance.connector.fetch_current_price(symbol)
 
-        global_stats = db.get_stats(from_timestamp=0)
-        cf_global = global_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
-        
-        base = symbol.split('/')[0]
-        qty_held = 0.0
-        try: qty_held = bot_instance.connector.get_total_balance(base)
-        except: pass
-        current_val = qty_held * current_price
-        init_val = db.get_coin_initial_balance(symbol)
-        
-        global_pnl = current_val - init_val + cf_global
-        
-        session_start_ts = bot_instance.global_start_time
-        session_stats = db.get_stats(from_timestamp=session_start_ts)
-        cf_session = session_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
-        qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
-        
-        pnl_value = (qty_delta * current_price) + cf_session
+        if current_price > 0:
+            global_stats = db.get_stats(from_timestamp=0)
+            cf_global = global_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
+            
+            base = symbol.split('/')[0]
+            qty_held = 0.0
+            try: qty_held = bot_instance.connector.get_total_balance(base)
+            except: pass
+            current_val = qty_held * current_price
+            
+            init_val = db.get_coin_initial_balance(symbol)
+            if init_val == 0.0 and current_val > 0:
+                init_val = current_val
+            
+            global_pnl = current_val - init_val + cf_global
+            
+            session_start_ts = bot_instance.global_start_time
+            session_stats = db.get_stats(from_timestamp=session_start_ts)
+            cf_session = session_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
+            qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
+            
+            pnl_value = (qty_delta * current_price) + cf_session
 
     return {
         "symbol": symbol,
@@ -289,19 +303,17 @@ async def reset_stats_api():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- ENDPOINTS DE PÀNIC / CONTROL ---
-
 @app.post("/api/panic/stop")
 async def panic_stop_api():
     if bot_instance:
-        bot_instance.panic_stop() # Això ara posa is_paused = True
+        bot_instance.panic_stop() 
         return {"status": "success", "message": "Bot PAUSADO. No se ejecutarán operaciones."}
     return {"status": "error", "detail": "Bot no inicializado"}
 
 @app.post("/api/panic/start")
 async def panic_start_api():
     if bot_instance:
-        bot_instance.resume_bot() # Això posa is_paused = False
+        bot_instance.resume_bot()
         return {"status": "success", "message": "Bot REANUDADO. Operaciones activas."}
     return {"status": "error", "detail": "Bot no inicializado"}
 

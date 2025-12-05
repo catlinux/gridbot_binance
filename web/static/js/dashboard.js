@@ -513,7 +513,7 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     chart.setOption(option);
 }
 
-// --- DEFINICIÓ DE LA FUNCIÓ INIT (ARA SÍ) ---
+// INICI
 async function init() {
     try {
         const res = await fetch('/api/status');
@@ -578,6 +578,5 @@ async function panicSell() {
     } catch (e) { alert("Error de conexión."); }
 }
 
-// INICI
 init();
 setInterval(() => { if (currentMode === 'home') { loadHome(); } else if (currentMode !== 'config') loadSymbol(currentMode); }, 4000);
