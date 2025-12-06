@@ -35,6 +35,14 @@ class BotDatabase:
             )
         ''')
         
+        # NOVA TAULA: Històric de Balanços
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS balance_history (
+                timestamp REAL PRIMARY KEY,
+                equity REAL
+            )
+        ''')
+        
         cursor.execute('''CREATE TABLE IF NOT EXISTS bot_info (key TEXT PRIMARY KEY, value TEXT)''')
         
         cursor.execute("SELECT value FROM bot_info WHERE key='first_run'")
@@ -43,6 +51,23 @@ class BotDatabase:
 
         conn.commit()
         conn.close()
+
+    # --- GESTIÓ D'HISTÒRIC DE BALANÇ (NOU) ---
+    def log_balance_snapshot(self, equity):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        # Guardem timestamp actual i valor total
+        cursor.execute("INSERT INTO balance_history (timestamp, equity) VALUES (?, ?)", (time.time(), equity))
+        conn.commit()
+        conn.close()
+
+    def get_balance_history(self, from_timestamp=0):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT timestamp, equity FROM balance_history WHERE timestamp >= ? ORDER BY timestamp ASC", (from_timestamp,))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
 
     # --- GESTIÓ DE SALDOS ---
     def set_session_start_balance(self, value):
@@ -239,7 +264,7 @@ class BotDatabase:
         return {
             "trades": total_trades,
             "best_coin": best_coin,
-            "trades_distribution": trades_distribution, # Retornem distribució per MONEDA
+            "trades_distribution": trades_distribution,
             "per_coin_stats": {
                 "cash_flow": cash_flow_per_coin,
                 "qty_delta": qty_delta_per_coin,
@@ -269,6 +294,8 @@ class BotDatabase:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM trade_history")
         cursor.execute("DELETE FROM market_data")
+        # AFEGIT: Netejar històric de balanços també
+        cursor.execute("DELETE FROM balance_history")
         now = str(time.time())
         cursor.execute("DELETE FROM bot_info WHERE key IN ('first_run', 'global_start_balance', 'session_start_balance', 'coins_initial_equity')")
         cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', now))

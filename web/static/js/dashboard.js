@@ -5,6 +5,7 @@ let charts = {};
 let initialized = false;
 let currentTimeframe = '15m';
 let currentConfigObj = null; 
+let fullGlobalHistory = []; 
 
 // --- FORMATTERS INTEL·LIGENTS ---
 
@@ -16,15 +17,9 @@ const fmtUSDC = (num) => {
 const fmtPrice = (num) => {
     if (num === undefined || num === null) return '--';
     const val = parseFloat(num);
-    
-    // CANVI: Pugem el llindar a 10.0 perquè entri XRP, ADA, etc.
-    if (val < 10.0) {
-        return val.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-    }
-    if (val >= 1000) {
-        return val.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    }
-    // Per a SOL, BNB, etc. (entre 10 i 999)
+    // APLICAT: 4 decimals si val menys de 10 (per XRP, ADA, DOGE...)
+    if (val < 10.0) return val.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    if (val >= 1000) return val.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     return val.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
@@ -127,7 +122,6 @@ function toggleCard(index) {
 
 async function saveConfigForm() {
     if (!currentConfigObj) return;
-    
     currentConfigObj.system.cycle_delay = parseInt(document.getElementById('sys-cycle').value);
     
     const testnetCheckbox = document.getElementById('sys-testnet');
@@ -183,6 +177,81 @@ function renderDonut(domId, data, isCurrency = false) {
     });
 }
 
+// --- HISTORICAL LINE CHARTS ---
+async function loadBalanceCharts() {
+    try {
+        const res = await fetch('/api/history/balance');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        fullGlobalHistory = data.global; 
+        renderLineChart('balanceChartSession', data.session, '#0ecb81');
+        renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); 
+    } catch(e) { console.error("Error loading charts", e); }
+}
+
+function renderLineChart(domId, data, color) {
+    const dom = document.getElementById(domId);
+    if (!dom) return;
+    
+    if (!data || data.length === 0) return;
+
+    let chart = echarts.getInstanceByDom(dom);
+    if (!chart) chart = echarts.init(dom);
+    
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            formatter: function (params) {
+                const date = new Date(params[0].value[0]);
+                const val = fmtUSDC(params[0].value[1]);
+                return `${date.toLocaleString()}<br/><b>${val} USDC</b>`;
+            }
+        },
+        grid: { left: 10, right: 10, top: 10, bottom: 10, containLabel: true },
+        xAxis: {
+            type: 'time',
+            splitLine: { show: false },
+            axisLabel: { fontSize: 10 }
+        },
+        yAxis: {
+            type: 'value',
+            scale: true, 
+            splitLine: { show: true, lineStyle: { type: 'dashed', color: '#eee' } },
+            axisLabel: { fontSize: 10 }
+        },
+        series: [{
+            type: 'line',
+            showSymbol: false,
+            data: data,
+            itemStyle: { color: color },
+            areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: color },
+                    { offset: 1, color: 'rgba(255, 255, 255, 0)' }
+                ]),
+                opacity: 0.2
+            },
+            lineStyle: { width: 2 }
+        }]
+    };
+    chart.setOption(option);
+}
+
+function filterHistory(hours) {
+    document.querySelectorAll('.hist-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+    
+    if (hours === 'all') {
+        renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6');
+        return;
+    }
+    const cutoff = Date.now() - (hours * 3600 * 1000);
+    const filtered = fullGlobalHistory.filter(item => item[0] >= cutoff);
+    renderLineChart('balanceChartGlobal', filtered, '#3b82f6');
+}
+
+// --- TAB SYNC ---
 function ensureTabExists(symbol) {
     const safe = symbol.replace('/', '_');
     const tabList = document.getElementById('mainTabs');
@@ -263,6 +332,103 @@ function syncTabs(activePairs) {
     activePairs.forEach(sym => {
         ensureTabExists(sym);
     });
+}
+
+// --- LOAD HOME ---
+async function loadHome() {
+    try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        
+        if (data.active_pairs) {
+            syncTabs(data.active_pairs);
+        }
+        
+        const badge = document.getElementById('status-badge');
+        const headerDiv = badge.parentElement;
+
+        let engineBtn = document.getElementById('btn-engine-toggle');
+        if (!engineBtn) {
+            engineBtn = document.createElement('button');
+            engineBtn.id = 'btn-engine-toggle';
+            engineBtn.className = 'btn btn-sm btn-outline-light ms-3';
+            engineBtn.onclick = toggleEngine;
+            headerDiv.insertBefore(engineBtn, badge.nextSibling);
+        }
+
+        if (data.status === 'Stopped') {
+            badge.innerText = 'DETENIDO';
+            badge.className = 'badge bg-danger me-2';
+            engineBtn.innerHTML = '<i class="fa-solid fa-power-off me-1"></i> ENCENDER SISTEMA';
+            engineBtn.className = 'btn btn-sm btn-success fw-bold ms-3';
+        } else {
+            engineBtn.innerHTML = '<i class="fa-solid fa-power-off me-1"></i> APAGAR SISTEMA';
+            engineBtn.className = 'btn btn-sm btn-outline-danger ms-3';
+            
+            if (data.status === 'Paused') {
+                badge.innerText = 'PAUSADO';
+                badge.className = 'badge bg-warning text-dark me-2';
+            } else {
+                badge.innerText = 'OPERATIVO';
+                badge.className = 'badge bg-success me-2';
+            }
+        }
+
+        document.getElementById('total-balance').innerText = `${fmtUSDC(data.total_usdc_value)} USDC`;
+
+        updateColorValue('dash-profit-session', data.stats.session.profit, ' $');
+        updateColorValue('dash-profit-total', data.stats.global.profit, ' $');
+
+        document.getElementById('dash-trades-session').innerText = fmtInt(data.stats.session.trades);
+        document.getElementById('dash-coin-session').innerText = data.stats.session.best_coin;
+        document.getElementById('dash-uptime-session').innerText = data.stats.session.uptime;
+
+        document.getElementById('dash-trades-total').innerText = fmtInt(data.stats.global.trades);
+        document.getElementById('dash-coin-total').innerText = data.stats.global.best_coin;
+        document.getElementById('dash-uptime-total').innerText = data.stats.global.uptime;
+
+        renderDonut('pieChart', data.portfolio_distribution, true);
+        renderDonut('sessionTradesChart', data.session_trades_distribution, false);
+        renderDonut('globalTradesChart', data.global_trades_distribution, false);
+        
+        // NOU: Actualitzar gràfics de línia
+        loadBalanceCharts();
+
+        const strategiesBody = document.getElementById('strategies-table-body');
+        if (strategiesBody) {
+            strategiesBody.innerHTML = data.strategies.map(s => {
+                const totalPnlClass = s.total_pnl >= 0 ? 'text-success' : 'text-danger';
+                const totalPnlSign = s.total_pnl >= 0 ? '+' : '';
+                const totalPnlText = s.total_trades > 0 ? `${totalPnlSign}${fmtUSDC(s.total_pnl)} $` : '0,00 $';
+                const totalPnlFinalClass = s.total_trades > 0 ? totalPnlClass : 'text-muted';
+
+                const sessPnlClass = s.session_pnl >= 0 ? 'text-success' : 'text-danger';
+                const sessPnlSign = s.session_pnl >= 0 ? '+' : '';
+                const sessPnlText = `${sessPnlSign}${fmtUSDC(s.session_pnl)} $`;
+
+                const safeSym = s.symbol.replace('/', '_');
+                
+                return `
+                    <tr>
+                        <td class="fw-bold">${s.symbol}</td>
+                        <td><span class="badge bg-success bg-opacity-25 text-success">Activo</span></td>
+                        <td><small>${s.grids} Líneas @ ${s.amount}$ (Spread ${s.spread}%)</small></td>
+                        <td class="fw-bold">${s.total_trades}</td>
+                        <td class="${totalPnlFinalClass} fw-bold">${totalPnlText}</td>
+                        <td class="${sessPnlClass} fw-bold">${sessPnlText}</td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-primary" onclick="document.querySelector('[data-bs-target=\\'#content-${safeSym}\\']').click()">
+                                <i class="fa-solid fa-chart-line"></i> Ver
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        loadGlobalOrders();
+
+    } catch(e) { console.error(e); }
 }
 
 async function loadGlobalOrders() {
@@ -353,99 +519,6 @@ async function closeOrder(symbol, id, side, amount) {
             alert("Error: " + data.detail);
         }
     } catch (e) { alert("Error de conexión"); }
-}
-
-async function loadHome() {
-    try {
-        const res = await fetch('/api/status');
-        const data = await res.json();
-        
-        if (data.active_pairs) {
-            syncTabs(data.active_pairs);
-        }
-        
-        const badge = document.getElementById('status-badge');
-        const headerDiv = badge.parentElement;
-
-        let engineBtn = document.getElementById('btn-engine-toggle');
-        if (!engineBtn) {
-            engineBtn = document.createElement('button');
-            engineBtn.id = 'btn-engine-toggle';
-            engineBtn.className = 'btn btn-sm btn-outline-light ms-3';
-            engineBtn.onclick = toggleEngine;
-            headerDiv.insertBefore(engineBtn, badge.nextSibling);
-        }
-
-        if (data.status === 'Stopped') {
-            badge.innerText = 'DETENIDO';
-            badge.className = 'badge bg-danger me-2';
-            engineBtn.innerHTML = '<i class="fa-solid fa-power-off me-1"></i> ENCENDER SISTEMA';
-            engineBtn.className = 'btn btn-sm btn-success fw-bold ms-3';
-        } else {
-            engineBtn.innerHTML = '<i class="fa-solid fa-power-off me-1"></i> APAGAR SISTEMA';
-            engineBtn.className = 'btn btn-sm btn-outline-danger ms-3';
-            
-            if (data.status === 'Paused') {
-                badge.innerText = 'PAUSADO';
-                badge.className = 'badge bg-warning text-dark me-2';
-            } else {
-                badge.innerText = 'OPERATIVO';
-                badge.className = 'badge bg-success me-2';
-            }
-        }
-
-        document.getElementById('total-balance').innerText = `${fmtUSDC(data.total_usdc_value)} USDC`;
-
-        updateColorValue('dash-profit-session', data.stats.session.profit, ' $');
-        updateColorValue('dash-profit-total', data.stats.global.profit, ' $');
-
-        document.getElementById('dash-trades-session').innerText = fmtInt(data.stats.session.trades);
-        document.getElementById('dash-coin-session').innerText = data.stats.session.best_coin;
-        document.getElementById('dash-uptime-session').innerText = data.stats.session.uptime;
-
-        document.getElementById('dash-trades-total').innerText = fmtInt(data.stats.global.trades);
-        document.getElementById('dash-coin-total').innerText = data.stats.global.best_coin;
-        document.getElementById('dash-uptime-total').innerText = data.stats.global.uptime;
-
-        renderDonut('pieChart', data.portfolio_distribution, true);
-        renderDonut('sessionTradesChart', data.session_trades_distribution, false);
-        renderDonut('globalTradesChart', data.global_trades_distribution, false);
-        
-        const strategiesBody = document.getElementById('strategies-table-body');
-        if (strategiesBody) {
-            strategiesBody.innerHTML = data.strategies.map(s => {
-                const totalPnlClass = s.total_pnl >= 0 ? 'text-success' : 'text-danger';
-                const totalPnlSign = s.total_pnl >= 0 ? '+' : '';
-                const totalPnlText = s.total_trades > 0 ? `${totalPnlSign}${fmtUSDC(s.total_pnl)} $` : '0,00 $';
-                const totalPnlFinalClass = s.total_trades > 0 ? totalPnlClass : 'text-muted';
-
-                const sessPnlClass = s.session_pnl >= 0 ? 'text-success' : 'text-danger';
-                const sessPnlSign = s.session_pnl >= 0 ? '+' : '';
-                const sessPnlText = `${sessPnlSign}${fmtUSDC(s.session_pnl)} $`;
-
-                const safeSym = s.symbol.replace('/', '_');
-                
-                return `
-                    <tr>
-                        <td class="fw-bold">${s.symbol}</td>
-                        <td><span class="badge bg-success bg-opacity-25 text-success">Activo</span></td>
-                        <td><small>${s.grids} Líneas @ ${s.amount}$ (Spread ${s.spread}%)</small></td>
-                        <td class="fw-bold">${s.total_trades}</td>
-                        <td class="${totalPnlFinalClass} fw-bold">${totalPnlText}</td>
-                        <td class="${sessPnlClass} fw-bold">${sessPnlText}</td>
-                        <td class="text-end">
-                            <button class="btn btn-sm btn-outline-primary" onclick="document.querySelector('[data-bs-target=\\'#content-${safeSym}\\']').click()">
-                                <i class="fa-solid fa-chart-line"></i> Ver
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        loadGlobalOrders();
-
-    } catch(e) { console.error(e); }
 }
 
 async function loadSymbol(symbol) {
@@ -598,7 +671,7 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     chart.setOption(option);
 }
 
-// --- ENGINE TOGGLE FUNCTION ---
+// --- ENGINE TOGGLE ---
 async function toggleEngine() {
     const btn = document.getElementById('btn-engine-toggle');
     const isTurningOn = btn.classList.contains('btn-success');
@@ -620,24 +693,7 @@ async function toggleEngine() {
     } catch (e) { alert("Error de conexión"); }
 }
 
-async function init() {
-    try {
-        const res = await fetch('/api/status');
-        if (!res.ok) return;
-        const data = await res.json();
-        
-        if (!initialized && data.active_pairs && data.active_pairs.length > 0) {
-            data.active_pairs.forEach(sym => {
-                ensureTabExists(sym);
-            });
-            initialized = true;
-        }
-        loadHome();
-    } catch (e) { console.error("Error init:", e); }
-}
-
-// --- FUNCIONS DE PÀNIC ---
-
+// --- PANIC FUNCTIONS ---
 async function resetStatistics() {
     if (!confirm("⚠️ ATENCIÓN ⚠️\n\n¿Estás seguro de que quieres borrar TODAS las estadísticas?\n\nSe pondrá a cero el PnL, el historial de operaciones y los tiempos de sesión.\nEsta acción no se puede deshacer.")) {
         return;
@@ -684,5 +740,27 @@ async function panicSell() {
     } catch (e) { alert("Error de conexión."); }
 }
 
+// --- INIT ---
+async function init() {
+    try {
+        const res = await fetch('/api/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        if (!initialized && data.active_pairs) {
+            syncTabs(data.active_pairs);
+            initialized = true;
+        }
+        loadHome();
+    } catch (e) { console.error("Error init:", e); }
+}
+
 init();
-setInterval(() => { if (currentMode === 'home') { loadHome(); } else if (currentMode !== 'config') loadSymbol(currentMode); }, 4000);
+setInterval(() => { 
+    if (currentMode === 'home') { 
+        loadHome(); 
+        loadBalanceCharts(); // UPDATE CHART DATA
+    } else if (currentMode !== 'config') { 
+        loadSymbol(currentMode); 
+    } 
+}, 4000);

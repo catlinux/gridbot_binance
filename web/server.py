@@ -113,7 +113,6 @@ async def get_status():
     session_cash_flow = session_stats['per_coin_stats']['cash_flow']
     session_qty_delta = session_stats['per_coin_stats']['qty_delta']
 
-    # Recuperem el cash flow global per calcular PnL global per moneda
     global_cash_flow = global_stats['per_coin_stats']['cash_flow']
 
     strategies_data = []
@@ -124,7 +123,6 @@ async def get_status():
         trades_count = global_trades_map.get(symbol, 0)
         curr_price = current_prices_map.get(symbol, 0.0)
         
-        # PnL Global per moneda
         cf_global = global_cash_flow.get(symbol, 0.0)
         curr_val = holding_values.get(symbol, 0.0)
         init_val = db.get_coin_initial_balance(symbol)
@@ -138,7 +136,6 @@ async def get_status():
             if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
                  strat_pnl_global = 0.0
 
-            # PnL Sessió per moneda
             cf_session = session_cash_flow.get(symbol, 0.0)
             qty_change = session_qty_delta.get(symbol, 0.0)
             inventory_value_change = qty_change * curr_price
@@ -179,6 +176,22 @@ async def get_status():
                 "uptime": total_uptime_str
             }
         }
+    }
+
+@app.get("/api/history/balance")
+async def get_balance_history_api():
+    full_hist = db.get_balance_history(from_timestamp=0)
+    
+    session_start = bot_instance.global_start_time if bot_instance else 0
+    session_hist = [x for x in full_hist if x[0] >= session_start]
+    
+    def fmt(rows):
+        # Retornem [timestamp en ms, equity]
+        return [[r[0]*1000, round(r[1], 2)] for r in rows]
+        
+    return {
+        "global": fmt(full_hist),
+        "session": fmt(session_hist)
     }
 
 @app.get("/api/orders")
@@ -276,13 +289,9 @@ async def save_config(config: ConfigUpdate):
         json5.loads(config.content)
         with open('config/config.json5', 'w') as f: f.write(config.content)
         
-        # --- CANVI CLAU: Actualitzem la llista de parells manualment al Bot ---
         if bot_instance:
-            # 1. Recarreguem config al connector (per si ha canviat Testnet/Real)
             bot_instance.connector.check_and_reload_config()
-            # 2. Assignem la nova config al Bot
             bot_instance.config = bot_instance.connector.config
-            # 3. Forcem la renovació de la llista de parells actius
             bot_instance._refresh_pairs_map()
             
         return {"status": "success", "message": "Configuración guardada y aplicada."}
