@@ -40,6 +40,7 @@ def start_server(bot, host="0.0.0.0", port=8000):
     uvicorn.run(app, host=host, port=port, log_level="error")
 
 def format_uptime(seconds):
+    if seconds < 0: return "0s"
     seconds = int(seconds)
     days = seconds // 86400
     hours = (seconds % 86400) // 3600
@@ -73,18 +74,20 @@ async def get_status():
     holding_values = {}
     current_prices_map = {}
 
-    for symbol in bot_instance.active_pairs:
+    pairs_to_check = bot_instance.active_pairs
+    
+    for symbol in pairs_to_check:
         base = symbol.split('/')[0]
         try:
             qty = bot_instance.connector.get_total_balance(base)
             price = prices.get(symbol, 0.0)
-            if price == 0: price = bot_instance.connector.fetch_current_price(symbol)
+            if price == 0 and bot_instance.is_running: 
+                price = bot_instance.connector.fetch_current_price(symbol)
             
             if price > 0:
                 current_prices_map[symbol] = price 
                 val = qty * price
                 holding_values[symbol] = val 
-                
                 if val > 0.5: 
                     portfolio.append({"name": base, "value": round(val, 2)})
                     current_total_equity += val
@@ -95,26 +98,33 @@ async def get_status():
     global_pnl_total = current_total_equity - global_start
 
     global_stats = db.get_stats(from_timestamp=0)
-    global_cash_flow = global_stats['per_coin_stats']['cash_flow']
     global_trades_map = global_stats['per_coin_stats']['trades']
     
     session_start_ts = bot_instance.global_start_time
+    if bot_instance.is_running:
+        session_uptime_str = format_uptime(time.time() - session_start_ts)
+    else:
+        session_uptime_str = "OFF"
+
+    first_run_ts = db.get_first_run_timestamp()
+    total_uptime_str = format_uptime(time.time() - first_run_ts)
+
     session_stats = db.get_stats(from_timestamp=session_start_ts)
     session_cash_flow = session_stats['per_coin_stats']['cash_flow']
     session_qty_delta = session_stats['per_coin_stats']['qty_delta']
 
-    first_run_ts = db.get_first_run_timestamp()
-    total_uptime_str = format_uptime(time.time() - first_run_ts)
-    session_uptime_str = format_uptime(time.time() - session_start_ts)
+    # Recuperem el cash flow global per calcular PnL global per moneda
+    global_cash_flow = global_stats['per_coin_stats']['cash_flow']
 
     strategies_data = []
     accumulated_session_pnl = 0.0
 
-    for symbol in bot_instance.active_pairs:
+    for symbol in pairs_to_check:
         strat_conf = bot_instance.pairs_map.get(symbol, {}).get('strategy', {})
         trades_count = global_trades_map.get(symbol, 0)
         curr_price = current_prices_map.get(symbol, 0.0)
         
+        # PnL Global per moneda
         cf_global = global_cash_flow.get(symbol, 0.0)
         curr_val = holding_values.get(symbol, 0.0)
         init_val = db.get_coin_initial_balance(symbol)
@@ -123,14 +133,12 @@ async def get_status():
             strat_pnl_global = 0.0
             strat_pnl_session = 0.0
         else:
-            if init_val == 0.0 and curr_val > 0:
-                init_val = curr_val
-            
+            if init_val == 0.0 and curr_val > 0: init_val = curr_val
             strat_pnl_global = curr_val - init_val + cf_global
-            
             if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
                  strat_pnl_global = 0.0
 
+            # PnL Sessió per moneda
             cf_session = session_cash_flow.get(symbol, 0.0)
             qty_change = session_qty_delta.get(symbol, 0.0)
             inventory_value_change = qty_change * curr_price
@@ -154,7 +162,7 @@ async def get_status():
         "balance_usdc": round(usdc_balance, 2),
         "total_usdc_value": round(current_total_equity, 2),
         "portfolio_distribution": portfolio,
-        "session_trades_distribution": session_stats['trades_distribution'], # RESTAURAT A MONEDES
+        "session_trades_distribution": session_stats['trades_distribution'],
         "global_trades_distribution": global_stats['trades_distribution'],
         "strategies": strategies_data,
         "stats": {
@@ -182,7 +190,7 @@ async def get_all_orders():
     for o in raw_orders:
         symbol = o['symbol']
         current_price = prices.get(symbol, 0.0)
-        if current_price == 0 and bot_instance:
+        if current_price == 0 and bot_instance and bot_instance.is_running:
              current_price = bot_instance.connector.fetch_current_price(symbol)
 
         o['current_price'] = current_price
@@ -199,23 +207,17 @@ async def get_all_orders():
 
 @app.post("/api/close_order")
 async def close_order_api(req: CloseOrderRequest):
-    if not bot_instance:
-        raise HTTPException(status_code=503, detail="Bot no iniciado")
-    
+    if not bot_instance: raise HTTPException(status_code=503, detail="Bot no inicializado")
     success = bot_instance.manual_close_order(req.symbol, req.order_id, req.side, req.amount)
-    if success:
-        return {"status": "success", "message": "Orden cerrada y convertida a USDC correctamente."}
-    else:
-        raise HTTPException(status_code=400, detail="Error cerrando la orden.")
+    if success: return {"status": "success", "message": "Orden cerrada."}
+    else: raise HTTPException(status_code=400, detail="Error cerrando orden.")
 
 @app.get("/api/details/{symbol:path}")
 async def get_pair_details(symbol: str, timeframe: str = '15m'):
     data = db.get_pair_data(symbol)
-    
     raw_candles = []
-    if bot_instance:
-        try:
-            raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=100)
+    if bot_instance and bot_instance.is_running:
+        try: raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=100)
         except: pass
     if not raw_candles: raw_candles = data['candles']
     
@@ -229,30 +231,25 @@ async def get_pair_details(symbol: str, timeframe: str = '15m'):
     
     if bot_instance:
         current_price = data['price']
-        if current_price == 0: 
+        if current_price == 0 and bot_instance.is_running: 
             current_price = bot_instance.connector.fetch_current_price(symbol)
 
         if current_price > 0:
             global_stats = db.get_stats(from_timestamp=0)
             cf_global = global_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
-            
             base = symbol.split('/')[0]
             qty_held = 0.0
             try: qty_held = bot_instance.connector.get_total_balance(base)
             except: pass
             current_val = qty_held * current_price
-            
             init_val = db.get_coin_initial_balance(symbol)
-            if init_val == 0.0 and current_val > 0:
-                init_val = current_val
-            
+            if init_val == 0.0 and current_val > 0: init_val = current_val
             global_pnl = current_val - init_val + cf_global
             
             session_start_ts = bot_instance.global_start_time
             session_stats = db.get_stats(from_timestamp=session_start_ts)
             cf_session = session_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
             qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
-            
             pnl_value = (qty_delta * current_price) + cf_session
 
     return {
@@ -269,24 +266,27 @@ async def get_pair_details(symbol: str, timeframe: str = '15m'):
 @app.get("/api/config")
 async def get_config():
     try:
-        config_path = 'config/config.json5'
-        if not os.path.exists(config_path):
-            raise HTTPException(status_code=404, detail="Archivo no encontrado")
-        with open(config_path, 'r') as f:
-            content = f.read()
+        with open('config/config.json5', 'r') as f: content = f.read()
         return {"content": content}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/config")
 async def save_config(config: ConfigUpdate):
     try:
         json5.loads(config.content)
-        with open('config/config.json5', 'w') as f:
-            f.write(config.content)
-        return {"status": "success", "message": "Configuración guardada correctamente."}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error de sintaxis JSON5: {e}")
+        with open('config/config.json5', 'w') as f: f.write(config.content)
+        
+        # --- CANVI CLAU: Actualitzem la llista de parells manualment al Bot ---
+        if bot_instance:
+            # 1. Recarreguem config al connector (per si ha canviat Testnet/Real)
+            bot_instance.connector.check_and_reload_config()
+            # 2. Assignem la nova config al Bot
+            bot_instance.config = bot_instance.connector.config
+            # 3. Forcem la renovació de la llista de parells actius
+            bot_instance._refresh_pairs_map()
+            
+        return {"status": "success", "message": "Configuración guardada y aplicada."}
+    except Exception as e: raise HTTPException(status_code=400, detail=f"Error JSON5: {e}")
 
 @app.post("/api/reset_stats")
 async def reset_stats_api():
@@ -294,39 +294,51 @@ async def reset_stats_api():
         db.reset_all_statistics()
         if bot_instance:
             bot_instance.global_start_time = time.time()
-            current_equity = bot_instance.calculate_total_equity()
-            db.set_session_start_balance(current_equity)
-            db.set_global_start_balance_if_not_exists(current_equity)
-            bot_instance.capture_initial_snapshots()
-            
-        return {"status": "success", "message": "Estadísticas reiniciadas correctamente."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+            if bot_instance.is_running:
+                bot_instance.capture_initial_snapshots()
+        return {"status": "success", "message": "Estadísticas reiniciadas."}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/panic/stop")
 async def panic_stop_api():
     if bot_instance:
         bot_instance.panic_stop() 
-        return {"status": "success", "message": "Bot PAUSADO. No se ejecutarán operaciones."}
-    return {"status": "error", "detail": "Bot no inicializado"}
+        return {"status": "success", "message": "Bot PAUSADO."}
+    return {"status": "error", "detail": "Bot no iniciado"}
 
 @app.post("/api/panic/start")
 async def panic_start_api():
     if bot_instance:
         bot_instance.resume_bot()
-        return {"status": "success", "message": "Bot REANUDADO. Operaciones activas."}
-    return {"status": "error", "detail": "Bot no inicializado"}
+        return {"status": "success", "message": "Bot REANUDADO."}
+    return {"status": "error", "detail": "Bot no iniciado"}
 
 @app.post("/api/panic/cancel_all")
 async def panic_cancel_all_api():
     if bot_instance:
-        count = bot_instance.panic_cancel_all()
-        return {"status": "success", "message": f"Se han intentado cancelar órdenes en {count} pares."}
-    return {"status": "error", "detail": "Bot no inicializado"}
+        bot_instance.panic_cancel_all()
+        return {"status": "success", "message": "Órdenes canceladas."}
+    return {"status": "error", "detail": "Bot no iniciado"}
 
 @app.post("/api/panic/sell_all")
 async def panic_sell_all_api():
     if bot_instance:
-        count = bot_instance.panic_sell_all()
-        return {"status": "success", "message": f"Se ha ejecutado venta a mercado en {count} monedas."}
-    return {"status": "error", "detail": "Bot no inicializado"}
+        bot_instance.panic_sell_all()
+        return {"status": "success", "message": "Venta pánico ejecutada."}
+    return {"status": "error", "detail": "Bot no iniciado"}
+
+@app.post("/api/engine/on")
+async def engine_on_api():
+    if bot_instance:
+        if bot_instance.launch():
+            return {"status": "success", "message": "Motor de trading ARRANCADO."}
+        else:
+            return {"status": "warning", "message": "El motor ya está corriendo."}
+    return {"status": "error", "detail": "Error interno"}
+
+@app.post("/api/engine/off")
+async def engine_off_api():
+    if bot_instance:
+        bot_instance.stop_logic()
+        return {"status": "success", "message": "Motor de trading APAGADO."}
+    return {"status": "error", "detail": "Error interno"}

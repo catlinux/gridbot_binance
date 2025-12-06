@@ -6,13 +6,11 @@ let initialized = false;
 let currentTimeframe = '15m';
 let currentConfigObj = null; 
 
-// --- FORMATTERS INTEL·LIGENTS ---
-
+// --- FORMATTERS ---
 const fmtUSDC = (num) => { 
     if (num === undefined || num === null) return '--'; 
     return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); 
 };
-
 const fmtPrice = (num) => {
     if (num === undefined || num === null) return '--';
     const val = parseFloat(num);
@@ -20,24 +18,20 @@ const fmtPrice = (num) => {
     if (val >= 1000) return val.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     return val.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
-
 const fmtInt = (num) => { 
     if (num === undefined || num === null) return '--'; 
     return parseInt(num).toLocaleString('es-ES'); 
 };
-
 const fmtCrypto = (num) => { 
     if (!num) return '-'; 
     const val = parseFloat(num);
     let dec = val < 1 ? 5 : 2;
     return val.toLocaleString('es-ES', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 };
-
 const fmtPct = (num) => {
     if (!num) return '0,00%';
     return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
 };
-
 const updateColorValue = (elementId, value, suffix = '') => {
     const el = document.getElementById(elementId);
     if (!el) return;
@@ -64,7 +58,33 @@ async function loadConfigForm() {
         const res = await fetch('/api/config');
         const data = await res.json();
         currentConfigObj = JSON5.parse(data.content);
+        
         document.getElementById('sys-cycle').value = currentConfigObj.system.cycle_delay;
+        
+        const configTab = document.getElementById('content-config');
+        const systemCardBody = configTab.querySelector('.card-body'); 
+        
+        if (systemCardBody && !document.getElementById('sys-testnet-container')) {
+            const div = document.createElement('div');
+            div.id = 'sys-testnet-container'; 
+            div.className = 'mt-3 p-3 bg-light border rounded';
+            div.innerHTML = `
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="sys-testnet">
+                    <label class="form-check-label fw-bold" for="sys-testnet">
+                        MODO TESTNET (Simulación)
+                    </label>
+                    <div class="form-text">Si desmarcas esta casilla, operarás con DINERO REAL en Binance.</div>
+                </div>
+            `;
+            systemCardBody.appendChild(div);
+        }
+        
+        if (document.getElementById('sys-testnet')) {
+            const isTest = currentConfigObj.system.use_testnet !== undefined ? currentConfigObj.system.use_testnet : true;
+            document.getElementById('sys-testnet').checked = isTest;
+        }
+
         const container = document.getElementById('coins-config-container');
         container.innerHTML = '';
         currentConfigObj.pairs.forEach((pair, index) => {
@@ -94,7 +114,14 @@ function toggleCard(index) {
 
 async function saveConfigForm() {
     if (!currentConfigObj) return;
+    
     currentConfigObj.system.cycle_delay = parseInt(document.getElementById('sys-cycle').value);
+    
+    const testnetCheckbox = document.getElementById('sys-testnet');
+    if (testnetCheckbox) {
+        currentConfigObj.system.use_testnet = testnetCheckbox.checked;
+    }
+
     currentConfigObj.pairs.forEach((pair, index) => {
         const isEnabled = document.getElementById(`enable-${index}`).checked;
         const amount = parseFloat(document.getElementById(`amount-${index}`).value);
@@ -106,13 +133,22 @@ async function saveConfigForm() {
         pair.strategy.grids_quantity = qty;
         pair.strategy.grid_spread = spread;
     });
+
     const jsonString = JSON.stringify(currentConfigObj, null, 2);
     const msgBox = document.getElementById('config-alert');
+    
     try {
         const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: jsonString }) });
         const data = await res.json();
         msgBox.style.display = 'block';
-        if (res.ok) { msgBox.className = 'alert alert-success'; msgBox.innerHTML = '<i class="fa-solid fa-check-circle"></i> Configuración guardada! Recargando...'; setTimeout(() => { location.reload(); }, 1500); } else { msgBox.className = 'alert alert-danger'; msgBox.innerText = 'Error: ' + data.detail; }
+        if (res.ok) { 
+            msgBox.className = 'alert alert-success'; 
+            msgBox.innerHTML = '<i class="fa-solid fa-check-circle"></i> Configuración guardada! Recargando...'; 
+            setTimeout(() => { location.reload(); }, 1500); 
+        } else { 
+            msgBox.className = 'alert alert-danger'; 
+            msgBox.innerText = 'Error: ' + data.detail; 
+        }
     } catch (e) { alert("Error de conexión al guardar."); }
 }
 
@@ -134,6 +170,34 @@ function renderDonut(domId, data, isCurrency = false) {
     });
 }
 
+// --- FUNCIÓ NOVA PER SINCRONITZAR PESTANYES (CREAR I ESBORRAR) ---
+function syncTabs(activePairs) {
+    if (!activePairs) return;
+    const tabList = document.getElementById('mainTabs');
+    const tabContent = document.getElementById('mainTabsContent');
+    const safeSymbols = activePairs.map(s => s.replace('/', '_'));
+
+    // 1. Eliminar pestanyes que ja no estan actives
+    const existingTabs = Array.from(tabList.querySelectorAll('li.nav-item button.nav-link'));
+    existingTabs.forEach(btn => {
+        const targetId = btn.getAttribute('data-bs-target').replace('#content-', '');
+        
+        // Si no és "home" ni "config" i no està a la llista activa, esborrem
+        if (targetId !== 'home' && targetId !== 'config' && !safeSymbols.includes(targetId)) {
+            // Eliminar botó
+            btn.parentElement.remove();
+            // Eliminar contingut
+            const contentDiv = document.getElementById(`content-${targetId}`);
+            if (contentDiv) contentDiv.remove();
+        }
+    });
+
+    // 2. Crear pestanyes noves
+    activePairs.forEach(sym => {
+        ensureTabExists(sym);
+    });
+}
+
 function ensureTabExists(symbol) {
     const safe = symbol.replace('/', '_');
     const tabList = document.getElementById('mainTabs');
@@ -144,7 +208,10 @@ function ensureTabExists(symbol) {
     const li = document.createElement('li');
     li.className = 'nav-item';
     li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
-    tabList.appendChild(li);
+    
+    // Inserim abans de la pestanya de Config per mantenir l'ordre
+    const configTabLi = document.getElementById('tab-config').parentElement;
+    tabList.insertBefore(li, configTabLi);
 
     const div = document.createElement('div');
     div.className = 'tab-pane fade';
@@ -291,22 +358,39 @@ async function loadHome() {
         const res = await fetch('/api/status');
         const data = await res.json();
         
-        if (data.active_pairs && data.active_pairs.length > 0) {
-            data.active_pairs.forEach(sym => {
-                ensureTabExists(sym);
-            });
+        // CORRECCIÓ CLAU: Cridem a la nova funció que sincronitza (crea i esborra)
+        if (data.active_pairs) {
+            syncTabs(data.active_pairs);
         }
         
         const badge = document.getElementById('status-badge');
-        if (data.status === 'Running') {
-            badge.innerText = 'OPERATIVO';
-            badge.className = 'badge bg-success me-3';
-        } else if (data.status === 'Paused') {
-            badge.innerText = 'PAUSADO';
-            badge.className = 'badge bg-warning text-dark me-3';
-        } else {
+        const headerDiv = badge.parentElement;
+
+        let engineBtn = document.getElementById('btn-engine-toggle');
+        if (!engineBtn) {
+            engineBtn = document.createElement('button');
+            engineBtn.id = 'btn-engine-toggle';
+            engineBtn.className = 'btn btn-sm btn-outline-light ms-3';
+            engineBtn.onclick = toggleEngine;
+            headerDiv.insertBefore(engineBtn, badge.nextSibling);
+        }
+
+        if (data.status === 'Stopped') {
             badge.innerText = 'DETENIDO';
-            badge.className = 'badge bg-danger me-3';
+            badge.className = 'badge bg-danger me-2';
+            engineBtn.innerHTML = '<i class="fa-solid fa-power-off me-1"></i> ENCENDER SISTEMA';
+            engineBtn.className = 'btn btn-sm btn-success fw-bold ms-3';
+        } else {
+            engineBtn.innerHTML = '<i class="fa-solid fa-power-off me-1"></i> APAGAR SISTEMA';
+            engineBtn.className = 'btn btn-sm btn-outline-danger ms-3';
+            
+            if (data.status === 'Paused') {
+                badge.innerText = 'PAUSADO';
+                badge.className = 'badge bg-warning text-dark me-2';
+            } else {
+                badge.innerText = 'OPERATIVO';
+                badge.className = 'badge bg-success me-2';
+            }
         }
 
         document.getElementById('total-balance').innerText = `${fmtUSDC(data.total_usdc_value)} USDC`;
@@ -513,7 +597,28 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     chart.setOption(option);
 }
 
-// INICI
+// --- ENGINE TOGGLE FUNCTION ---
+async function toggleEngine() {
+    const btn = document.getElementById('btn-engine-toggle');
+    const isTurningOn = btn.classList.contains('btn-success');
+    const action = isTurningOn ? 'ENCENDER' : 'APAGAR';
+    
+    if (!confirm(`¿Seguro que quieres ${action} el motor de trading?`)) return;
+    
+    const endpoint = isTurningOn ? '/api/engine/on' : '/api/engine/off';
+    
+    try {
+        const res = await fetch(endpoint, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            alert(data.message);
+            loadHome();
+        } else {
+            alert("Error: " + data.message);
+        }
+    } catch (e) { alert("Error de conexión"); }
+}
+
 async function init() {
     try {
         const res = await fetch('/api/status');
