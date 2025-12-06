@@ -10,6 +10,7 @@ import time
 import json5 
 from datetime import datetime
 from core.database import BotDatabase 
+from utils.telegram import send_msg
 
 app = FastAPI()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +35,7 @@ class CloseOrderRequest(BaseModel):
     side: str
     amount: float
 
-def start_server(bot, host="127.0.0.1", port=8000):
+def start_server(bot, host="0.0.0.0", port=8000):
     global bot_instance
     bot_instance = bot
     uvicorn.run(app, host=host, port=port, log_level="error")
@@ -98,6 +99,7 @@ async def get_status():
     global_pnl_total = current_total_equity - global_start
 
     global_stats = db.get_stats(from_timestamp=0)
+    global_cash_flow = global_stats['per_coin_stats']['cash_flow']
     global_trades_map = global_stats['per_coin_stats']['trades']
     
     session_start_ts = bot_instance.global_start_time
@@ -112,8 +114,6 @@ async def get_status():
     session_stats = db.get_stats(from_timestamp=session_start_ts)
     session_cash_flow = session_stats['per_coin_stats']['cash_flow']
     session_qty_delta = session_stats['per_coin_stats']['qty_delta']
-
-    global_cash_flow = global_stats['per_coin_stats']['cash_flow']
 
     strategies_data = []
     accumulated_session_pnl = 0.0
@@ -131,8 +131,11 @@ async def get_status():
             strat_pnl_global = 0.0
             strat_pnl_session = 0.0
         else:
-            if init_val == 0.0 and curr_val > 0: init_val = curr_val
+            if init_val == 0.0 and curr_val > 0:
+                init_val = curr_val
+            
             strat_pnl_global = curr_val - init_val + cf_global
+            
             if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
                  strat_pnl_global = 0.0
 
@@ -181,12 +184,10 @@ async def get_status():
 @app.get("/api/history/balance")
 async def get_balance_history_api():
     full_hist = db.get_balance_history(from_timestamp=0)
-    
     session_start = bot_instance.global_start_time if bot_instance else 0
     session_hist = [x for x in full_hist if x[0] >= session_start]
     
     def fmt(rows):
-        # Retornem [timestamp en ms, equity]
         return [[r[0]*1000, round(r[1], 2)] for r in rows]
         
     return {
@@ -293,6 +294,8 @@ async def save_config(config: ConfigUpdate):
             bot_instance.connector.check_and_reload_config()
             bot_instance.config = bot_instance.connector.config
             bot_instance._refresh_pairs_map()
+
+        send_msg("💾 <b>CONFIGURACIÓN GUARDADA</b>\nSe han aplicado cambios desde la web.")
             
         return {"status": "success", "message": "Configuración guardada y aplicada."}
     except Exception as e: raise HTTPException(status_code=400, detail=f"Error JSON5: {e}")
@@ -305,6 +308,9 @@ async def reset_stats_api():
             bot_instance.global_start_time = time.time()
             if bot_instance.is_running:
                 bot_instance.capture_initial_snapshots()
+        
+        send_msg("⚠️ <b>RESET DE ESTADÍSTICAS</b>\nSe han borrado los datos históricos y reiniciado el PnL.")
+
         return {"status": "success", "message": "Estadísticas reiniciadas."}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 

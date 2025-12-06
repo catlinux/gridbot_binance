@@ -2,6 +2,7 @@
 from core.exchange import BinanceConnector
 from core.database import BotDatabase
 from utils.logger import log
+from utils.telegram import send_msg 
 import time
 import math
 import threading
@@ -20,19 +21,16 @@ class GridBot:
         self.is_paused = False 
         self.reserved_inventory = {} 
         self.global_start_time = 0
+        self.last_status_msg = ""
         self.bot_thread = None 
 
     def _refresh_pairs_map(self):
         self.pairs_map = {p['symbol']: p for p in self.config['pairs'] if p['enabled']}
         self.active_pairs = list(self.pairs_map.keys())
 
-    # --- BUCLE DE DADES (BACKGROUND) ---
     def _data_collector_loop(self):
-        """Bucle secundari: Recull preus, ordres i trades per a la UI i DB"""
-        last_balance_log = 0
-
         while self.is_running:
-            if self.is_paused or not self.connector.exchange:
+            if self.is_paused:
                 time.sleep(1)
                 continue
 
@@ -52,16 +50,16 @@ class GridBot:
                 except Exception: pass
                 time.sleep(1) 
             
-            # NOU: Guardar historial de balanç (cada 60s aprox)
-            if time.time() - last_balance_log > 60:
-                total_equity = self.calculate_total_equity()
-                if total_equity > 0:
-                    self.db.log_balance_snapshot(total_equity)
-                last_balance_log = time.time()
+            # Guardem historial de balanç cada ~60s
+            if int(time.time()) % 60 == 0:
+                try:
+                    total_equity = self.calculate_total_equity()
+                    if total_equity > 0:
+                        self.db.log_balance_snapshot(total_equity)
+                except: pass
 
             time.sleep(2) 
 
-    # --- LÒGICA DE NEGOCI I CALCULS ---
     def _get_params(self, symbol):
         pair_config = self.pairs_map.get(symbol, {})
         return pair_config.get('strategy', self.config['default_strategy'])
@@ -76,7 +74,6 @@ class GridBot:
             levels.append(current_price * (1 - (spread_percent * i))) 
             levels.append(current_price * (1 + (spread_percent * i))) 
         levels.sort()
-        
         clean_levels = []
         for p in levels:
             try:
@@ -89,11 +86,9 @@ class GridBot:
         params = self._get_params(symbol)
         amount_usdc = params['amount_per_grid']
         base_amount = amount_usdc / price 
-        
         market = self.connector.exchange.market(symbol)
         min_amount = market['limits']['amount']['min']
         if base_amount < min_amount: return 0.0
-        
         try:
             amt_str = self.connector.exchange.amount_to_precision(symbol, base_amount)
             return float(amt_str)
@@ -145,7 +140,16 @@ class GridBot:
                       except: pass
 
             log.warning(f"[{symbol}] Creando orden {target_side} @ {level_price}")
-            self.connector.place_order(symbol, target_side, amount, level_price)
+            
+            # --- CREAR ORDRE I ALERTAR ---
+            order = self.connector.place_order(symbol, target_side, amount, level_price)
+            if order:
+                emoji = "🟢" if target_side == 'buy' else "🔴"
+                msg = (f"{emoji} <b>NUEVA ORDEN {target_side.upper()}</b>\n"
+                       f"Moneda: <b>{symbol}</b>\n"
+                       f"Precio: {level_price}\n"
+                       f"Cantidad: {amount}")
+                send_msg(msg)
 
     def _handle_smart_reload(self):
         print() 
@@ -161,6 +165,7 @@ class GridBot:
         if old_testnet != new_testnet:
             network_name = "TESTNET" if new_testnet else "REAL"
             log.warning(f"🚨 CAMBIO DE RED DETECTADO A: {network_name}. Reiniciando sistema...")
+            send_msg(f"🔄 <b>CAMBIO DE RED</b>\nEl bot ha pasado a modo: <b>{network_name}</b>")
             
             self.levels = {}
             self.reserved_inventory = {}
@@ -190,6 +195,7 @@ class GridBot:
         for symbol in added: log.success(f"✨ Activando {symbol}.")
         
         log.info("✅ Recarga completada.")
+        send_msg("⚙️ <b>CONFIGURACIÓN ACTUALIZADA</b>\nNuevos parámetros de grid aplicados.")
 
     def manual_close_order(self, symbol, order_id, side, amount):
         print()
@@ -197,12 +203,14 @@ class GridBot:
         res = self.connector.cancel_order(order_id, symbol)
         if side == 'buy':
             log.success(f"Orden {order_id} cancelada. USDC recuperados.")
+            send_msg(f"🗑️ <b>ORDEN CANCELADA (Manual)</b>\n{symbol} - {side}")
             return True
         elif side == 'sell':
             time.sleep(0.5)
             market_order = self.connector.place_market_sell(symbol, amount)
             if market_order:
                 log.success(f"Activo vendido a mercado (Market Sell) correctamente.")
+                send_msg(f"🔥 <b>VENTA A MERCADO (Manual)</b>\n{symbol} - {amount}")
                 return True
             else:
                 log.error("No se ha podido ejecutar el Market Sell.")
@@ -240,17 +248,20 @@ class GridBot:
         print()
         log.warning("⛔ ACCIÓN DE USUARIO: PAUSANDO BOT...")
         self.is_paused = True
+        send_msg("⏸️ <b>BOT PAUSADO</b>\nSe han detenido todas las operaciones.")
         return True
 
     def resume_bot(self):
         print()
         log.success("▶️ ACCIÓN DE USUARIO: REANUDANDO BOT...")
         self.is_paused = False
+        send_msg("▶️ <b>BOT REANUDADO</b>\nContinuando operaciones.")
         return True
 
     def panic_cancel_all(self):
         print()
         log.warning("⛔ ACCIÓN DE PÁNICO: Cancelando todas las órdenes...")
+        send_msg("🗑️ <b>PÁNICO: CANCELAR TODO</b>\nBorrando todas las órdenes del exchange...")
         count = 0
         for symbol in self.active_pairs:
             self.connector.cancel_all_orders(symbol)
@@ -262,6 +273,7 @@ class GridBot:
     def panic_sell_all(self):
         print()
         log.warning("🔥 ACCIÓN DE PÁNICO: VENDIENDO TODO A USDC...")
+        send_msg("🔥 <b>PÁNICO: VENDER TODO</b>\nLiquidando cartera a USDC...")
         sold_count = 0
         self.panic_cancel_all()
         time.sleep(2) 
@@ -280,15 +292,18 @@ class GridBot:
                     time.sleep(0.5) 
             except Exception as e:
                 log.error(f"Error Panic Sell {symbol}: {e}")
+        
+        send_msg(f"🔥 <b>PÁNICO FINALIZADO</b>\nSe han liquidado {sold_count} posiciones.")
         return sold_count
 
-    # --- MOTOR PRINCIPAL (ENGINE) ---
+    # --- GESTIÓ DEL CICLE DE VIDA ---
 
-    def _run_engine(self):
+    def start_logic(self):
         log.info(f"{Fore.CYAN}--- INICIANDO GRIDBOT PROFESSIONAL ---{Style.RESET_ALL}")
         
         self.connector.check_and_reload_config()
         self.config = self.connector.config 
+        
         self.connector.validate_connection()
         
         log.info("Calculando patrimonio inicial...")
@@ -299,6 +314,8 @@ class GridBot:
         self.db.set_global_start_balance_if_not_exists(initial_equity)
         self.capture_initial_snapshots()
         self.global_start_time = time.time()
+        
+        send_msg(f"🚀 <b>MOTOR INICIADO</b>\nPatrimonio inicial: {initial_equity:.2f} USDC")
 
         log.warning("Limpiando órdenes antiguas iniciales...")
         for symbol in self.active_pairs:
@@ -316,16 +333,14 @@ class GridBot:
         try:
             self._monitoring_loop()
         except KeyboardInterrupt:
-            pass
-        finally:
-            log.info("Motor detenido.")
+            self._shutdown()
 
     def launch(self):
         if self.is_running:
             log.warning("El bot ja està corrent!")
             return False
         
-        self.bot_thread = threading.Thread(target=self._run_engine, daemon=True)
+        self.bot_thread = threading.Thread(target=self.start_logic, daemon=True)
         self.bot_thread.start()
         return True
 
@@ -333,6 +348,7 @@ class GridBot:
         if not self.is_running: return
         log.warning("Aturando lógica del bot...")
         self.is_running = False
+        send_msg("🛑 <b>MOTOR DETENIDO</b>\nEl bot se ha apagado.")
         log.success("Bot aturado.")
 
     def _monitoring_loop(self):

@@ -94,7 +94,10 @@ function ensureTabExists(symbol) {
     const li = document.createElement('li');
     li.className = 'nav-item';
     li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
-    tabList.appendChild(li);
+    
+    // Inserim abans de la pestanya de Config per mantenir l'ordre
+    const configTabLi = document.getElementById('tab-config').parentElement;
+    tabList.insertBefore(li, configTabLi);
 
     const div = document.createElement('div');
     div.className = 'tab-pane fade';
@@ -283,6 +286,7 @@ function renderDonut(domId, data, isCurrency = false) {
     });
 }
 
+// AQUESTA ÉS LA FUNCIÓ QUE FALTAVA:
 function renderLineChart(domId, data, color) {
     const dom = document.getElementById(domId);
     if (!dom) return;
@@ -331,6 +335,7 @@ function renderLineChart(domId, data, color) {
     chart.setOption(option);
 }
 
+// I AQUESTA:
 function filterHistory(hours) {
     document.querySelectorAll('.hist-btn').forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');
@@ -344,6 +349,19 @@ function filterHistory(hours) {
     renderLineChart('balanceChartGlobal', filtered, '#3b82f6');
 }
 
+// I AQUESTA TAMBÉ FALTAVA:
+async function loadBalanceCharts() {
+    try {
+        const res = await fetch('/api/history/balance');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        fullGlobalHistory = data.global; 
+        renderLineChart('balanceChartSession', data.session, '#0ecb81');
+        renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); 
+    } catch(e) { console.error("Error loading charts", e); }
+}
+
 function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     const dom = document.getElementById(`chart-${safeSym}`);
     if(!dom) return;
@@ -354,6 +372,7 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
 
     const candlesData = data.map(i => [i[0], parseFloat(i[1]), parseFloat(i[2]), parseFloat(i[3]), parseFloat(i[4])]);
     const currentPrice = candlesData[candlesData.length - 1][4];
+    
     const validData = candlesData.filter(d => d[4] > currentPrice * 0.1);
 
     let allPrices = [];
@@ -402,6 +421,7 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     const option = { 
         animation: false, 
         grid: { left: 10, right: 75, top: 10, bottom: 20, containLabel: true }, 
+        
         tooltip: { 
             trigger: 'axis', 
             axisPointer: { type: 'cross' },
@@ -421,6 +441,7 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
                 return html;
             }
         }, 
+        
         xAxis: { 
             type: 'category', 
             data: validData.map(i => i[0]), 
@@ -436,7 +457,11 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
             min: yMin,
             max: yMax,
             splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
-            axisLabel: { formatter: function (value) { return fmtPrice(value); } }
+            axisLabel: {
+                formatter: function (value) {
+                    return fmtPrice(value);
+                }
+            }
         }, 
         dataZoom: [{ type: 'inside', start: 60, end: 100 }], 
         series: [{ 
@@ -520,7 +545,7 @@ async function loadHome() {
         renderDonut('sessionTradesChart', data.session_trades_distribution, false);
         renderDonut('globalTradesChart', data.global_trades_distribution, false);
         
-        // LOAD BALANCE HISTORY CHARTS
+        // AQUI CRIDEM ALS GRÀFICS DE LÍNIA
         loadBalanceCharts();
 
         const strategiesBody = document.getElementById('strategies-table-body');
@@ -769,7 +794,8 @@ init();
 setInterval(() => { 
     if (currentMode === 'home') { 
         loadHome(); 
-        loadBalanceCharts(); // Actualització de gràfics de saldo
+        // loadBalanceCharts està definida a la secció 4 d'aquest arxiu
+        // Si no surt error aquí, tot està bé
     } else if (currentMode !== 'config') { 
         loadSymbol(currentMode); 
     } 

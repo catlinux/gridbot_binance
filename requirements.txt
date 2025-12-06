@@ -6,3 +6,4 @@ fastapi
 uvicorn
 pandas
 jinja2
+requests
