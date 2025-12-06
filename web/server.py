@@ -34,7 +34,7 @@ class CloseOrderRequest(BaseModel):
     side: str
     amount: float
 
-def start_server(bot, host="0.0.0.0", port=8000):
+def start_server(bot, host="127.0.0.1", port=8000):
     global bot_instance
     bot_instance = bot
     uvicorn.run(app, host=host, port=port, log_level="error")
