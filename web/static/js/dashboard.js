@@ -6,32 +6,45 @@ let initialized = false;
 let currentTimeframe = '15m';
 let currentConfigObj = null; 
 
-// --- FORMATTERS ---
+// --- FORMATTERS INTEL·LIGENTS ---
+
 const fmtUSDC = (num) => { 
     if (num === undefined || num === null) return '--'; 
     return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); 
 };
+
 const fmtPrice = (num) => {
     if (num === undefined || num === null) return '--';
     const val = parseFloat(num);
-    if (val < 1.0) return val.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-    if (val >= 1000) return val.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    
+    // CANVI: Pugem el llindar a 10.0 perquè entri XRP, ADA, etc.
+    if (val < 10.0) {
+        return val.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    }
+    if (val >= 1000) {
+        return val.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+    // Per a SOL, BNB, etc. (entre 10 i 999)
     return val.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
+
 const fmtInt = (num) => { 
     if (num === undefined || num === null) return '--'; 
     return parseInt(num).toLocaleString('es-ES'); 
 };
+
 const fmtCrypto = (num) => { 
     if (!num) return '-'; 
     const val = parseFloat(num);
     let dec = val < 1 ? 5 : 2;
     return val.toLocaleString('es-ES', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 };
+
 const fmtPct = (num) => {
     if (!num) return '0,00%';
     return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
 };
+
 const updateColorValue = (elementId, value, suffix = '') => {
     const el = document.getElementById(elementId);
     if (!el) return;
@@ -170,34 +183,6 @@ function renderDonut(domId, data, isCurrency = false) {
     });
 }
 
-// --- FUNCIÓ NOVA PER SINCRONITZAR PESTANYES (CREAR I ESBORRAR) ---
-function syncTabs(activePairs) {
-    if (!activePairs) return;
-    const tabList = document.getElementById('mainTabs');
-    const tabContent = document.getElementById('mainTabsContent');
-    const safeSymbols = activePairs.map(s => s.replace('/', '_'));
-
-    // 1. Eliminar pestanyes que ja no estan actives
-    const existingTabs = Array.from(tabList.querySelectorAll('li.nav-item button.nav-link'));
-    existingTabs.forEach(btn => {
-        const targetId = btn.getAttribute('data-bs-target').replace('#content-', '');
-        
-        // Si no és "home" ni "config" i no està a la llista activa, esborrem
-        if (targetId !== 'home' && targetId !== 'config' && !safeSymbols.includes(targetId)) {
-            // Eliminar botó
-            btn.parentElement.remove();
-            // Eliminar contingut
-            const contentDiv = document.getElementById(`content-${targetId}`);
-            if (contentDiv) contentDiv.remove();
-        }
-    });
-
-    // 2. Crear pestanyes noves
-    activePairs.forEach(sym => {
-        ensureTabExists(sym);
-    });
-}
-
 function ensureTabExists(symbol) {
     const safe = symbol.replace('/', '_');
     const tabList = document.getElementById('mainTabs');
@@ -208,10 +193,7 @@ function ensureTabExists(symbol) {
     const li = document.createElement('li');
     li.className = 'nav-item';
     li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
-    
-    // Inserim abans de la pestanya de Config per mantenir l'ordre
-    const configTabLi = document.getElementById('tab-config').parentElement;
-    tabList.insertBefore(li, configTabLi);
+    tabList.appendChild(li);
 
     const div = document.createElement('div');
     div.className = 'tab-pane fade';
@@ -261,6 +243,26 @@ function ensureTabExists(symbol) {
             <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Histórico de Operaciones</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div></div></div>
         </div>`;
     tabContent.appendChild(div);
+}
+
+function syncTabs(activePairs) {
+    if (!activePairs) return;
+    const tabList = document.getElementById('mainTabs');
+    const safeSymbols = activePairs.map(s => s.replace('/', '_'));
+
+    const existingTabs = Array.from(tabList.querySelectorAll('li.nav-item button.nav-link'));
+    existingTabs.forEach(btn => {
+        const targetId = btn.getAttribute('data-bs-target').replace('#content-', '');
+        if (targetId !== 'home' && targetId !== 'config' && !safeSymbols.includes(targetId)) {
+            btn.parentElement.remove();
+            const contentDiv = document.getElementById(`content-${targetId}`);
+            if (contentDiv) contentDiv.remove();
+        }
+    });
+
+    activePairs.forEach(sym => {
+        ensureTabExists(sym);
+    });
 }
 
 async function loadGlobalOrders() {
@@ -358,7 +360,6 @@ async function loadHome() {
         const res = await fetch('/api/status');
         const data = await res.json();
         
-        // CORRECCIÓ CLAU: Cridem a la nova funció que sincronitza (crea i esborra)
         if (data.active_pairs) {
             syncTabs(data.active_pairs);
         }

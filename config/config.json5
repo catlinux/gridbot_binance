@@ -41,9 +41,9 @@
       "symbol": "SOL/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 9,
-        "amount_per_grid": 8,
-        "grid_spread": 0.5
+        "grids_quantity": 8,
+        "amount_per_grid": 12,
+        "grid_spread": 0.6
       }
     },
     {
@@ -57,20 +57,20 @@
     },
     {
       "symbol": "XRP/USDC",
-      "enabled": false,
+      "enabled": true,
       "strategy": {
-        "grids_quantity": 10,
-        "amount_per_grid": 50,
-        "grid_spread": 0.3
+        "grids_quantity": 8,
+        "amount_per_grid": 12,
+        "grid_spread": 0.6
       }
     },
     {
       "symbol": "DOGE/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 9,
-        "amount_per_grid": 8,
-        "grid_spread": 0.5
+        "grids_quantity": 8,
+        "amount_per_grid": 12,
+        "grid_spread": 0.6
       }
     }
   ]
