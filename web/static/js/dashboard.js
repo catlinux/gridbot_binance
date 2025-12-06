@@ -1,13 +1,19 @@
 // Arxiu: gridbot_binance/web/static/js/dashboard.js
 
+// ==========================================
+// 1. VARIABLES GLOBALS I ESTAT
+// ==========================================
 let currentMode = 'home';
 let charts = {};
 let initialized = false;
 let currentTimeframe = '15m';
 let currentConfigObj = null; 
-let fullGlobalHistory = []; 
+let fullGlobalHistory = []; // Per guardar tot l'històric i filtrar localment
 
-// --- FORMATTERS INTEL·LIGENTS ---
+
+// ==========================================
+// 2. FORMATTERS I HELPERS (UTILITATS)
+// ==========================================
 
 const fmtUSDC = (num) => { 
     if (num === undefined || num === null) return '--'; 
@@ -17,7 +23,7 @@ const fmtUSDC = (num) => {
 const fmtPrice = (num) => {
     if (num === undefined || num === null) return '--';
     const val = parseFloat(num);
-    // APLICAT: 4 decimals si val menys de 10 (per XRP, ADA, DOGE...)
+    // 4 decimals si val menys de 10 (per XRP, ADA, DOGE...)
     if (val < 10.0) return val.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
     if (val >= 1000) return val.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     return val.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -49,10 +55,17 @@ const updateColorValue = (elementId, value, suffix = '') => {
     else el.classList.add('text-danger');
 };
 
+
+// ==========================================
+// 3. GESTIÓ DE LA UI (NAVEGACIÓ, FORMULARIS)
+// ==========================================
+
 function setMode(mode) {
     currentMode = mode;
     if (mode === 'home') loadHome();
     else if (mode !== 'config') loadSymbol(mode);
+    
+    // Redimensionar gràfics si cal
     if (mode !== 'home' && mode !== 'config') {
         setTimeout(() => {
             const safe = mode.replace('/', '_');
@@ -61,6 +74,99 @@ function setMode(mode) {
     }
 }
 
+function setTimeframe(tf) {
+    currentTimeframe = tf;
+    document.querySelectorAll('.tf-btn').forEach(btn => { 
+        btn.classList.remove('active'); 
+        if(btn.innerText.toLowerCase() === tf) btn.classList.add('active'); 
+    });
+    if (currentMode !== 'home' && currentMode !== 'config') loadSymbol(currentMode);
+}
+
+// --- GESTIÓ DE PESTANYES (SYNC) ---
+function ensureTabExists(symbol) {
+    const safe = symbol.replace('/', '_');
+    const tabList = document.getElementById('mainTabs');
+    const tabContent = document.getElementById('mainTabsContent');
+    
+    if (document.getElementById(`content-${safe}`)) return;
+
+    const li = document.createElement('li');
+    li.className = 'nav-item';
+    li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
+    tabList.appendChild(li);
+
+    const div = document.createElement('div');
+    div.className = 'tab-pane fade';
+    div.id = `content-${safe}`;
+    div.innerHTML = `
+        <div class="row">
+            <div class="col-lg-8 mb-3">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <span>Gráfico Precio</span>
+                            <div class="btn-group ms-3" role="group">
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1m')">1m</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('5m')">5m</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn active" onclick="setTimeframe('15m')">15m</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1h')">1h</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('4h')">4h</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1d')">1d</button>
+                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1w')">1w</button>
+                            </div>
+                        </div>
+                        <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
+                    </div>
+                    <div class="card-body p-1"><div id="chart-${safe}" class="chart-container"></div></div>
+                </div>
+            </div>
+            <div class="col-lg-4 mb-3">
+                <div class="card h-100">
+                    <div class="card-header">Estado del Grid</div>
+                    <div class="card-body">
+                        <div class="row g-2 text-center mb-4">
+                            <div class="col-6"><div class="bg-buy p-3 rounded"><small class="d-block fw-bold mb-1">COMPRAS</small><b class="fs-3" id="count-buy-${safe}">0</b></div></div>
+                            <div class="col-6"><div class="bg-sell p-3 rounded"><small class="d-block fw-bold mb-1">VENTAS</small><b class="fs-3" id="count-sell-${safe}">0</b></div></div>
+                        </div>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between"><span>Próx. Compra</span><b class="text-buy" id="next-buy-${safe}">--</b></li>
+                            <li class="list-group-item d-flex justify-content-between"><span>Próx. Venta</span><b class="text-sell" id="next-sell-${safe}">--</b></li>
+                            <li class="list-group-item d-flex justify-content-between mt-3 bg-light"><strong>Balance Sesión</strong><b id="sess-pnl-${safe}">--</b></li>
+                            <li class="list-group-item d-flex justify-content-between bg-light"><strong>Balance Global</strong><b id="glob-pnl-${safe}">--</b></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Órdenes Activas</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-striped mb-0"><thead class="table-light"><tr><th>Tipo</th><th>Precio</th><th>Volumen</th></tr></thead><tbody id="orders-${safe}"></tbody></table></div></div></div>
+            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Histórico de Operaciones</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div></div></div>
+        </div>`;
+    tabContent.appendChild(div);
+}
+
+function syncTabs(activePairs) {
+    if (!activePairs) return;
+    const tabList = document.getElementById('mainTabs');
+    const safeSymbols = activePairs.map(s => s.replace('/', '_'));
+
+    const existingTabs = Array.from(tabList.querySelectorAll('li.nav-item button.nav-link'));
+    existingTabs.forEach(btn => {
+        const targetId = btn.getAttribute('data-bs-target').replace('#content-', '');
+        if (targetId !== 'home' && targetId !== 'config' && !safeSymbols.includes(targetId)) {
+            btn.parentElement.remove();
+            const contentDiv = document.getElementById(`content-${targetId}`);
+            if (contentDiv) contentDiv.remove();
+        }
+    });
+
+    activePairs.forEach(sym => {
+        ensureTabExists(sym);
+    });
+}
+
+// --- CONFIG FORM ---
 async function loadConfigForm() {
     try {
         const res = await fetch('/api/config');
@@ -69,6 +175,7 @@ async function loadConfigForm() {
         
         document.getElementById('sys-cycle').value = currentConfigObj.system.cycle_delay;
         
+        // Selector Testnet
         const configTab = document.getElementById('content-config');
         const systemCardBody = configTab.querySelector('.card-body'); 
         
@@ -159,11 +266,10 @@ async function saveConfigForm() {
     } catch (e) { alert("Error de conexión al guardar."); }
 }
 
-function setTimeframe(tf) {
-    currentTimeframe = tf;
-    document.querySelectorAll('.tf-btn').forEach(btn => { btn.classList.remove('active'); if(btn.innerText.toLowerCase() === tf) btn.classList.add('active'); });
-    if (currentMode !== 'home' && currentMode !== 'config') loadSymbol(currentMode);
-}
+
+// ==========================================
+// 4. GRÀFICS (ECHARTS LOGIC)
+// ==========================================
 
 function renderDonut(domId, data, isCurrency = false) {
     const dom = document.getElementById(domId);
@@ -175,19 +281,6 @@ function renderDonut(domId, data, isCurrency = false) {
         legend: { orient: 'vertical', left: '0%', top: 'center', itemGap: 10, textStyle: { fontSize: 11, color: '#6b7280' } }, 
         series: [{ type: 'pie', radius: ['40%', '80%'], center: ['65%', '50%'], label: { show: false, position: 'center' }, emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } }, data: chartData }] 
     });
-}
-
-// --- HISTORICAL LINE CHARTS ---
-async function loadBalanceCharts() {
-    try {
-        const res = await fetch('/api/history/balance');
-        if (!res.ok) return;
-        const data = await res.json();
-        
-        fullGlobalHistory = data.global; 
-        renderLineChart('balanceChartSession', data.session, '#0ecb81');
-        renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); 
-    } catch(e) { console.error("Error loading charts", e); }
 }
 
 function renderLineChart(domId, data, color) {
@@ -251,90 +344,126 @@ function filterHistory(hours) {
     renderLineChart('balanceChartGlobal', filtered, '#3b82f6');
 }
 
-// --- TAB SYNC ---
-function ensureTabExists(symbol) {
-    const safe = symbol.replace('/', '_');
-    const tabList = document.getElementById('mainTabs');
-    const tabContent = document.getElementById('mainTabsContent');
+function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
+    const dom = document.getElementById(`chart-${safeSym}`);
+    if(!dom) return;
+    if (!data || data.length === 0) return;
     
-    if (document.getElementById(`content-${safe}`)) return;
+    let chart = echarts.getInstanceByDom(dom);
+    if (!chart) chart = echarts.init(dom);
 
-    const li = document.createElement('li');
-    li.className = 'nav-item';
-    li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
-    tabList.appendChild(li);
+    const candlesData = data.map(i => [i[0], parseFloat(i[1]), parseFloat(i[2]), parseFloat(i[3]), parseFloat(i[4])]);
+    const currentPrice = candlesData[candlesData.length - 1][4];
+    const validData = candlesData.filter(d => d[4] > currentPrice * 0.1);
 
-    const div = document.createElement('div');
-    div.className = 'tab-pane fade';
-    div.id = `content-${safe}`;
-    div.innerHTML = `
-        <div class="row">
-            <div class="col-lg-8 mb-3">
-                <div class="card h-100">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <div class="d-flex align-items-center">
-                            <span>Gráfico Precio</span>
-                            <div class="btn-group ms-3" role="group">
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1m')">1m</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('5m')">5m</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn active" onclick="setTimeframe('15m')">15m</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1h')">1h</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('4h')">4h</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1d')">1d</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1w')">1w</button>
-                            </div>
-                        </div>
-                        <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
-                    </div>
-                    <div class="card-body p-1"><div id="chart-${safe}" class="chart-container"></div></div>
-                </div>
-            </div>
-            <div class="col-lg-4 mb-3">
-                <div class="card h-100">
-                    <div class="card-header">Estado del Grid</div>
-                    <div class="card-body">
-                        <div class="row g-2 text-center mb-4">
-                            <div class="col-6"><div class="bg-buy p-3 rounded"><small class="d-block fw-bold mb-1">COMPRAS</small><b class="fs-3" id="count-buy-${safe}">0</b></div></div>
-                            <div class="col-6"><div class="bg-sell p-3 rounded"><small class="d-block fw-bold mb-1">VENTAS</small><b class="fs-3" id="count-sell-${safe}">0</b></div></div>
-                        </div>
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between"><span>Próx. Compra</span><b class="text-buy" id="next-buy-${safe}">--</b></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Próx. Venta</span><b class="text-sell" id="next-sell-${safe}">--</b></li>
-                            <li class="list-group-item d-flex justify-content-between mt-3 bg-light"><strong>Balance Sesión</strong><b id="sess-pnl-${safe}">--</b></li>
-                            <li class="list-group-item d-flex justify-content-between bg-light"><strong>Balance Global</strong><b id="glob-pnl-${safe}">--</b></li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Órdenes Activas</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-striped mb-0"><thead class="table-light"><tr><th>Tipo</th><th>Precio</th><th>Volumen</th></tr></thead><tbody id="orders-${safe}"></tbody></table></div></div></div>
-            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Histórico de Operaciones</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div></div></div>
-        </div>`;
-    tabContent.appendChild(div);
-}
+    let allPrices = [];
+    validData.forEach(d => {
+        allPrices.push(d[3]); 
+        allPrices.push(d[4]); 
+    });
+    activeOrders.forEach(o => allPrices.push(parseFloat(o.price)));
+    
+    let yMin = Math.min(...allPrices);
+    let yMax = Math.max(...allPrices);
+    
+    const padding = (yMax - yMin) * 0.002;
+    yMin = yMin - padding;
+    yMax = yMax + padding;
 
-function syncTabs(activePairs) {
-    if (!activePairs) return;
-    const tabList = document.getElementById('mainTabs');
-    const safeSymbols = activePairs.map(s => s.replace('/', '_'));
+    const gridMarkLines = gridLines.map(p => ({
+        yAxis: parseFloat(p),
+        lineStyle: { color: '#e5e7eb', type: 'dotted', width: 1 },
+        label: { show: false },
+        silent: true
+    }));
 
-    const existingTabs = Array.from(tabList.querySelectorAll('li.nav-item button.nav-link'));
-    existingTabs.forEach(btn => {
-        const targetId = btn.getAttribute('data-bs-target').replace('#content-', '');
-        if (targetId !== 'home' && targetId !== 'config' && !safeSymbols.includes(targetId)) {
-            btn.parentElement.remove();
-            const contentDiv = document.getElementById(`content-${targetId}`);
-            if (contentDiv) contentDiv.remove();
+    const orderMarkLines = activeOrders.map(o => ({
+        yAxis: parseFloat(o.price),
+        lineStyle: {
+            color: o.side === 'buy' ? '#0ecb81' : '#f6465d',
+            type: 'solid',
+            width: 1.5
+        },
+        label: {
+            show: true,
+            position: 'end', 
+            formatter: (o.side === 'buy' ? 'COMPRA' : 'VENTA') + ' ' + fmtPrice(o.price),
+            color: '#fff',
+            backgroundColor: o.side === 'buy' ? '#0ecb81' : '#f6465d',
+            padding: [3, 5],
+            borderRadius: 3,
+            fontSize: 10,
+            fontWeight: 'bold'
         }
-    });
+    }));
 
-    activePairs.forEach(sym => {
-        ensureTabExists(sym);
-    });
+    const allMarkLines = [...gridMarkLines, ...orderMarkLines];
+
+    const option = { 
+        animation: false, 
+        grid: { left: 10, right: 75, top: 10, bottom: 20, containLabel: true }, 
+        tooltip: { 
+            trigger: 'axis', 
+            axisPointer: { type: 'cross' },
+            formatter: function (params) {
+                if(!params || params.length === 0) return '';
+                const date = params[0].axisValue;
+                let html = `<b>${date}</b><br/>`;
+                params.forEach(p => {
+                    if(p.seriesType === 'candlestick') {
+                        const O = fmtPrice(p.data[1]);
+                        const C = fmtPrice(p.data[2]);
+                        const L = fmtPrice(p.data[3]);
+                        const H = fmtPrice(p.data[4]);
+                        html += `Apertura: ${O}<br/>Cierre: ${C}<br/>Min: ${L}<br/>Max: ${H}`;
+                    }
+                });
+                return html;
+            }
+        }, 
+        xAxis: { 
+            type: 'category', 
+            data: validData.map(i => i[0]), 
+            scale: true, 
+            boundaryGap: true, 
+            axisLine: { show: false }, 
+            axisTick: { show: false }, 
+            axisLabel: { show: false } 
+        }, 
+        yAxis: { 
+            scale: true, 
+            position: 'right', 
+            min: yMin,
+            max: yMax,
+            splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
+            axisLabel: { formatter: function (value) { return fmtPrice(value); } }
+        }, 
+        dataZoom: [{ type: 'inside', start: 60, end: 100 }], 
+        series: [{ 
+            type: 'candlestick', 
+            data: validData.map(i => [i[1], i[2], i[3], i[4]]), 
+            itemStyle: { 
+                color: '#0ecb81', 
+                color0: '#f6465d', 
+                borderColor: '#0ecb81', 
+                borderColor0: '#f6465d' 
+            }, 
+            markLine: { 
+                symbol: 'none', 
+                data: allMarkLines, 
+                silent: true
+            } 
+        }] 
+    };
+    
+    chart.setOption(option);
 }
 
-// --- LOAD HOME ---
+
+// ==========================================
+// 5. API CALLS & DATA FETCHING
+// ==========================================
+
 async function loadHome() {
     try {
         const res = await fetch('/api/status');
@@ -391,7 +520,7 @@ async function loadHome() {
         renderDonut('sessionTradesChart', data.session_trades_distribution, false);
         renderDonut('globalTradesChart', data.global_trades_distribution, false);
         
-        // NOU: Actualitzar gràfics de línia
+        // LOAD BALANCE HISTORY CHARTS
         loadBalanceCharts();
 
         const strategiesBody = document.getElementById('strategies-table-body');
@@ -428,6 +557,34 @@ async function loadHome() {
 
         loadGlobalOrders();
 
+    } catch(e) { console.error(e); }
+}
+
+async function loadSymbol(symbol) {
+    const safe = symbol.replace('/', '_');
+    try {
+        const res = await fetch(`/api/details/${symbol}?timeframe=${currentTimeframe}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        document.getElementById(`price-${safe}`).innerText = `${fmtPrice(data.price)} USDC`;
+        
+        renderCandleChart(safe, data.chart_data, data.grid_lines, data.open_orders);
+        
+        const buys = data.open_orders.filter(o => o.side === 'buy').sort((a,b) => b.price - a.price);
+        const sells = data.open_orders.filter(o => o.side === 'sell').sort((a,b) => a.price - b.price);
+        document.getElementById(`count-buy-${safe}`).innerText = buys.length;
+        document.getElementById(`count-sell-${safe}`).innerText = sells.length;
+        
+        document.getElementById(`next-buy-${safe}`).innerText = buys.length ? fmtPrice(buys[0].price) : '-';
+        document.getElementById(`next-sell-${safe}`).innerText = sells.length ? fmtPrice(sells[0].price) : '-';
+        
+        updateColorValue(`sess-pnl-${safe}`, data.session_pnl, ' $');
+        updateColorValue(`glob-pnl-${safe}`, data.global_pnl, ' $');
+        
+        const allOrders = [...sells.reverse(), ...buys];
+        document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase() === 'BUY' ? 'COMPRA' : 'VENTA'}</b></td><td>${fmtPrice(o.price)}</td><td>${fmtCrypto(o.amount)}</td></tr>`).join('');
+        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side === 'buy' ? 'COMPRA' : 'VENTA'}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`).join('');
     } catch(e) { console.error(e); }
 }
 
@@ -521,157 +678,11 @@ async function closeOrder(symbol, id, side, amount) {
     } catch (e) { alert("Error de conexión"); }
 }
 
-async function loadSymbol(symbol) {
-    const safe = symbol.replace('/', '_');
-    try {
-        const res = await fetch(`/api/details/${symbol}?timeframe=${currentTimeframe}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        
-        document.getElementById(`price-${safe}`).innerText = `${fmtPrice(data.price)} USDC`;
-        
-        renderCandleChart(safe, data.chart_data, data.grid_lines, data.open_orders);
-        
-        const buys = data.open_orders.filter(o => o.side === 'buy').sort((a,b) => b.price - a.price);
-        const sells = data.open_orders.filter(o => o.side === 'sell').sort((a,b) => a.price - b.price);
-        document.getElementById(`count-buy-${safe}`).innerText = buys.length;
-        document.getElementById(`count-sell-${safe}`).innerText = sells.length;
-        
-        document.getElementById(`next-buy-${safe}`).innerText = buys.length ? fmtPrice(buys[0].price) : '-';
-        document.getElementById(`next-sell-${safe}`).innerText = sells.length ? fmtPrice(sells[0].price) : '-';
-        
-        updateColorValue(`sess-pnl-${safe}`, data.session_pnl, ' $');
-        updateColorValue(`glob-pnl-${safe}`, data.global_pnl, ' $');
-        
-        const allOrders = [...sells.reverse(), ...buys];
-        document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase() === 'BUY' ? 'COMPRA' : 'VENTA'}</b></td><td>${fmtPrice(o.price)}</td><td>${fmtCrypto(o.amount)}</td></tr>`).join('');
-        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side === 'buy' ? 'COMPRA' : 'VENTA'}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`).join('');
-    } catch(e) { console.error(e); }
-}
 
-function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
-    const dom = document.getElementById(`chart-${safeSym}`);
-    if(!dom) return;
-    if (!data || data.length === 0) return;
-    
-    let chart = echarts.getInstanceByDom(dom);
-    if (!chart) chart = echarts.init(dom);
+// ==========================================
+// 6. FUNCIONS DE CONTROL I INICIALITZACIÓ
+// ==========================================
 
-    const candlesData = data.map(i => [i[0], parseFloat(i[1]), parseFloat(i[2]), parseFloat(i[3]), parseFloat(i[4])]);
-    const currentPrice = candlesData[candlesData.length - 1][4];
-    
-    const validData = candlesData.filter(d => d[4] > currentPrice * 0.1);
-
-    let allPrices = [];
-    validData.forEach(d => {
-        allPrices.push(d[3]); 
-        allPrices.push(d[4]); 
-    });
-    activeOrders.forEach(o => allPrices.push(parseFloat(o.price)));
-    
-    let yMin = Math.min(...allPrices);
-    let yMax = Math.max(...allPrices);
-    
-    const padding = (yMax - yMin) * 0.002;
-    yMin = yMin - padding;
-    yMax = yMax + padding;
-
-    const gridMarkLines = gridLines.map(p => ({
-        yAxis: parseFloat(p),
-        lineStyle: { color: '#e5e7eb', type: 'dotted', width: 1 },
-        label: { show: false },
-        silent: true
-    }));
-
-    const orderMarkLines = activeOrders.map(o => ({
-        yAxis: parseFloat(o.price),
-        lineStyle: {
-            color: o.side === 'buy' ? '#0ecb81' : '#f6465d',
-            type: 'solid',
-            width: 1.5
-        },
-        label: {
-            show: true,
-            position: 'end', 
-            formatter: (o.side === 'buy' ? 'COMPRA' : 'VENTA') + ' ' + fmtPrice(o.price),
-            color: '#fff',
-            backgroundColor: o.side === 'buy' ? '#0ecb81' : '#f6465d',
-            padding: [3, 5],
-            borderRadius: 3,
-            fontSize: 10,
-            fontWeight: 'bold'
-        }
-    }));
-
-    const allMarkLines = [...gridMarkLines, ...orderMarkLines];
-
-    const option = { 
-        animation: false, 
-        grid: { left: 10, right: 75, top: 10, bottom: 20, containLabel: true }, 
-        
-        tooltip: { 
-            trigger: 'axis', 
-            axisPointer: { type: 'cross' },
-            formatter: function (params) {
-                if(!params || params.length === 0) return '';
-                const date = params[0].axisValue;
-                let html = `<b>${date}</b><br/>`;
-                params.forEach(p => {
-                    if(p.seriesType === 'candlestick') {
-                        const O = fmtPrice(p.data[1]);
-                        const C = fmtPrice(p.data[2]);
-                        const L = fmtPrice(p.data[3]);
-                        const H = fmtPrice(p.data[4]);
-                        html += `Apertura: ${O}<br/>Cierre: ${C}<br/>Min: ${L}<br/>Max: ${H}`;
-                    }
-                });
-                return html;
-            }
-        }, 
-        
-        xAxis: { 
-            type: 'category', 
-            data: validData.map(i => i[0]), 
-            scale: true, 
-            boundaryGap: true, 
-            axisLine: { show: false }, 
-            axisTick: { show: false }, 
-            axisLabel: { show: false } 
-        }, 
-        yAxis: { 
-            scale: true, 
-            position: 'right', 
-            min: yMin,
-            max: yMax,
-            splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
-            axisLabel: {
-                formatter: function (value) {
-                    return fmtPrice(value);
-                }
-            }
-        }, 
-        dataZoom: [{ type: 'inside', start: 60, end: 100 }], 
-        series: [{ 
-            type: 'candlestick', 
-            data: validData.map(i => [i[1], i[2], i[3], i[4]]), 
-            itemStyle: { 
-                color: '#0ecb81', 
-                color0: '#f6465d', 
-                borderColor: '#0ecb81', 
-                borderColor0: '#f6465d' 
-            }, 
-            markLine: { 
-                symbol: 'none', 
-                data: allMarkLines, 
-                silent: true
-            } 
-        }] 
-    };
-    
-    chart.setOption(option);
-}
-
-// --- ENGINE TOGGLE ---
 async function toggleEngine() {
     const btn = document.getElementById('btn-engine-toggle');
     const isTurningOn = btn.classList.contains('btn-success');
@@ -693,7 +704,6 @@ async function toggleEngine() {
     } catch (e) { alert("Error de conexión"); }
 }
 
-// --- PANIC FUNCTIONS ---
 async function resetStatistics() {
     if (!confirm("⚠️ ATENCIÓN ⚠️\n\n¿Estás seguro de que quieres borrar TODAS las estadísticas?\n\nSe pondrá a cero el PnL, el historial de operaciones y los tiempos de sesión.\nEsta acción no se puede deshacer.")) {
         return;
@@ -740,7 +750,6 @@ async function panicSell() {
     } catch (e) { alert("Error de conexión."); }
 }
 
-// --- INIT ---
 async function init() {
     try {
         const res = await fetch('/api/status');
@@ -755,11 +764,12 @@ async function init() {
     } catch (e) { console.error("Error init:", e); }
 }
 
+// MAIN LOOP
 init();
 setInterval(() => { 
     if (currentMode === 'home') { 
         loadHome(); 
-        loadBalanceCharts(); // UPDATE CHART DATA
+        loadBalanceCharts(); // Actualització de gràfics de saldo
     } else if (currentMode !== 'config') { 
         loadSymbol(currentMode); 
     } 
