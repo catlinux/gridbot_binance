@@ -290,7 +290,6 @@ function renderDonut(domId, data, isCurrency = false) {
 function renderLineChart(domId, data, color) {
     const dom = document.getElementById(domId);
     if (!dom) return;
-    
     if (!data || data.length === 0) return;
 
     let chart = echarts.getInstanceByDom(dom);
@@ -370,22 +369,16 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     let chart = echarts.getInstanceByDom(dom);
     if (!chart) chart = echarts.init(dom);
 
-    const candlesData = data.map(i => [i[0], parseFloat(i[1]), parseFloat(i[2]), parseFloat(i[3]), parseFloat(i[4])]);
-    const currentPrice = candlesData[candlesData.length - 1][4];
+    // Optimització: Gràfic de LÍNIA en lloc d'espelmes per rapidesa
+    const priceData = data.map(i => [i[0], parseFloat(i[2])]); // Use close price
+    const currentPrice = priceData[priceData.length - 1][1];
     
-    const validData = candlesData.filter(d => d[4] > currentPrice * 0.1);
-
-    let allPrices = [];
-    validData.forEach(d => {
-        allPrices.push(d[3]); 
-        allPrices.push(d[4]); 
-    });
+    // Zoom automàtic
+    let allPrices = priceData.map(d => d[1]);
     activeOrders.forEach(o => allPrices.push(parseFloat(o.price)));
-    
     let yMin = Math.min(...allPrices);
     let yMax = Math.max(...allPrices);
-    
-    const padding = (yMax - yMin) * 0.002;
+    const padding = (yMax - yMin) * 0.005;
     yMin = yMin - padding;
     yMax = yMax + padding;
 
@@ -416,37 +409,24 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
         }
     }));
 
-    const allMarkLines = [...gridMarkLines, ...orderMarkLines];
-
     const option = { 
         animation: false, 
         grid: { left: 10, right: 75, top: 10, bottom: 20, containLabel: true }, 
-        
         tooltip: { 
             trigger: 'axis', 
             axisPointer: { type: 'cross' },
             formatter: function (params) {
                 if(!params || params.length === 0) return '';
                 const date = params[0].axisValue;
-                let html = `<b>${date}</b><br/>`;
-                params.forEach(p => {
-                    if(p.seriesType === 'candlestick') {
-                        const O = fmtPrice(p.data[1]);
-                        const C = fmtPrice(p.data[2]);
-                        const L = fmtPrice(p.data[3]);
-                        const H = fmtPrice(p.data[4]);
-                        html += `Apertura: ${O}<br/>Cierre: ${C}<br/>Min: ${L}<br/>Max: ${H}`;
-                    }
-                });
-                return html;
+                const val = fmtPrice(params[0].data[1]);
+                return `<b>${date}</b><br/>Precio: ${val}`;
             }
         }, 
-        
         xAxis: { 
             type: 'category', 
-            data: validData.map(i => i[0]), 
+            data: data.map(i => i[0]), 
             scale: true, 
-            boundaryGap: true, 
+            boundaryGap: false,
             axisLine: { show: false }, 
             axisTick: { show: false }, 
             axisLabel: { show: false } 
@@ -457,25 +437,22 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
             min: yMin,
             max: yMax,
             splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
-            axisLabel: {
-                formatter: function (value) {
-                    return fmtPrice(value);
-                }
-            }
+            axisLabel: { formatter: function (value) { return fmtPrice(value); } }
         }, 
-        dataZoom: [{ type: 'inside', start: 60, end: 100 }], 
         series: [{ 
-            type: 'candlestick', 
-            data: validData.map(i => [i[1], i[2], i[3], i[4]]), 
-            itemStyle: { 
-                color: '#0ecb81', 
-                color0: '#f6465d', 
-                borderColor: '#0ecb81', 
-                borderColor0: '#f6465d' 
-            }, 
+            type: 'line', 
+            data: priceData,
+            showSymbol: false,
+            lineStyle: { width: 2, color: '#3b82f6' },
+            areaStyle: {
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
+                    { offset: 1, color: 'rgba(59, 130, 246, 0)' }
+                ])
+            },
             markLine: { 
                 symbol: 'none', 
-                data: allMarkLines, 
+                data: [...gridMarkLines, ...orderMarkLines],
                 silent: true
             } 
         }] 
@@ -794,8 +771,8 @@ init();
 setInterval(() => { 
     if (currentMode === 'home') { 
         loadHome(); 
-        // loadBalanceCharts està definida a la secció 4 d'aquest arxiu
-        // Si no surt error aquí, tot està bé
+        // AQUESTA ÉS LA LÍNIA QUE ABANS FALTAVA I QUE ARA ESTÀ ASSEGURADA:
+        loadBalanceCharts(); 
     } else if (currentMode !== 'config') { 
         loadSymbol(currentMode); 
     } 

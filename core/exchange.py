@@ -117,7 +117,7 @@ class BinanceConnector:
             # CANVI CLAU: Sumem explícitament free + used
             if asset in balance:
                 free = float(balance[asset].get('free', 0.0))
-                used = float(balance[asset].get('used', 0.0)) # 'used' són els fons en ordres
+                used = float(balance[asset].get('used', 0.0)) 
                 return free + used
             return 0.0
         except Exception as e:
@@ -153,6 +153,30 @@ class BinanceConnector:
         except Exception as e:
             log.error(f"Error en Market Sell: {e}")
             return None
+
+    # --- FUNCIÓ NOVA ---
+    def place_market_buy(self, symbol, amount_usdc):
+        """Compra a mercat especificant quants USDC volem gastar (quoteOrderQty)"""
+        if not self.exchange: return None
+        try:
+            log.warning(f"Ejecutando COMPRA INICIAL a Mercado {symbol} Valor: {amount_usdc} USDC")
+            # En Binance, per comprar X valor de quote (USDC), fem servir create_order amb params
+            # Nota: CCXT gestiona 'cost' o 'quoteOrderQty' depenent de l'exchange, per simplificar
+            # calculem quantitat base aproximada o usem el mètode específic si cal.
+            # Per seguretat amb CCXT genèric, calcularem la quantitat base.
+            
+            price = self.fetch_current_price(symbol)
+            if price == 0: return None
+            
+            amount_base = amount_usdc / price
+            # Apliquem precisió
+            amount_base = self.exchange.amount_to_precision(symbol, amount_base)
+            
+            return self.exchange.create_order(symbol, 'market', 'buy', amount_base)
+        except Exception as e:
+            log.error(f"Error en Market Buy: {e}")
+            return None
+    # -------------------
 
     def cancel_order(self, order_id, symbol):
         if not self.exchange: return None

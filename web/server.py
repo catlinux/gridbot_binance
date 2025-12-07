@@ -42,7 +42,7 @@ def start_server(bot, host=None, port=None):
     global bot_instance
     bot_instance = bot
     
-    # Carreguem variables d'entorn per si cal
+    # Carreguem variables d'entorn per si cal (per saber on escoltar)
     load_dotenv('config/.env', override=True)
     
     # Si main.py no ens passa host/port, els busquem al .env o posem valors per defecte
@@ -81,6 +81,7 @@ async def get_status():
         portfolio = []
         current_total_equity = 0.0
         
+        # 1. Obtenir Saldo USDC (Lliure + Bloquejat)
         try:
             usdc_balance = bot_instance.connector.get_total_balance('USDC')
         except: usdc_balance = 0.0
@@ -94,11 +95,13 @@ async def get_status():
         # Llista segura de parells
         pairs_to_check = bot_instance.active_pairs if bot_instance.active_pairs else []
         
+        # 2. Obtenir Valor Crypto en USDC
         for symbol in pairs_to_check:
             base = symbol.split('/')[0]
             try:
                 qty = bot_instance.connector.get_total_balance(base)
                 price = prices.get(symbol, 0.0)
+                # Si el bot està corrent i no tenim preu a DB, el demanem
                 if price == 0 and bot_instance.is_running: 
                     price = bot_instance.connector.fetch_current_price(symbol)
                 
@@ -111,15 +114,17 @@ async def get_status():
                         current_total_equity += val
             except: pass
 
+        # --- CÀLCUL PnL GLOBAL ---
         global_start = db.get_global_start_balance()
         if global_start == 0: global_start = current_total_equity
         global_pnl_total = current_total_equity - global_start
 
-        # Estadístiques
+        # Estadístiques globals
         global_stats = db.get_stats(from_timestamp=0)
         global_trades_map = global_stats['per_coin_stats']['trades']
         global_cash_flow = global_stats['per_coin_stats']['cash_flow']
         
+        # Temps
         session_start_ts = bot_instance.global_start_time
         if bot_instance.is_running:
             session_uptime_str = format_uptime(time.time() - session_start_ts)
@@ -129,6 +134,7 @@ async def get_status():
         first_run_ts = db.get_first_run_timestamp()
         total_uptime_str = format_uptime(time.time() - first_run_ts)
 
+        # Estadístiques Sessió
         session_stats = db.get_stats(from_timestamp=session_start_ts)
         session_cash_flow = session_stats['per_coin_stats']['cash_flow']
         session_qty_delta = session_stats['per_coin_stats']['qty_delta']
@@ -150,13 +156,14 @@ async def get_status():
                     strat_pnl_global = 0.0
                     strat_pnl_session = 0.0
                 else:
-                    # CORRECCIÓ AUTOMÀTICA: Si falta init_val, el guardem ara mateix
+                    # CORRECCIÓ AUTOMÀTICA: Si falta init_val, el guardem ara mateix per evitar PnL bojos
                     if init_val == 0.0 and curr_val > 0:
                         init_val = curr_val
                         db.set_coin_initial_balance(symbol, init_val)
                     
                     strat_pnl_global = curr_val - init_val + cf_global
                     
+                    # Filtre extra: si no hi ha trades i el pnl és enorme, reset visual
                     if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
                         strat_pnl_global = 0.0
 
@@ -205,6 +212,7 @@ async def get_status():
         }
     except Exception as e:
         log.error(f"FATAL API ERROR: {e}")
+        # Retornem un objecte buit segur per no trencar el frontend
         return {
             "status": "Error",
             "active_pairs": [],
@@ -302,6 +310,7 @@ async def get_pair_details(symbol: str, timeframe: str = '15m'):
                 current_val = qty_held * current_price
                 init_val = db.get_coin_initial_balance(symbol)
                 
+                # CORRECCIÓ TAMBÉ AQUÍ
                 if init_val == 0.0 and current_val > 0:
                     init_val = current_val
                     db.set_coin_initial_balance(symbol, init_val)
@@ -341,6 +350,7 @@ async def save_config(config: ConfigUpdate):
         json5.loads(config.content)
         with open('config/config.json5', 'w') as f: f.write(config.content)
         
+        # Forcem actualització immediata al bot
         if bot_instance:
             bot_instance.connector.check_and_reload_config()
             bot_instance.config = bot_instance.connector.config
