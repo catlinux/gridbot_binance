@@ -5,7 +5,7 @@ import json5
 from dotenv import load_dotenv
 from utils.logger import log
 
-# Carreguem .env
+# Carreguem .env (override=True permet recarregar si canvia)
 load_dotenv(dotenv_path='config/.env', override=True)
 
 class BinanceConnector:
@@ -15,10 +15,10 @@ class BinanceConnector:
         self.last_config_mtime = 0 
         self.config = self._load_config()
         self._connect()
-        # Intentem carregar mercats, si falla no passa res, ho reintentarem després
         try:
             if self.exchange: self.exchange.load_markets()
-        except: pass
+        except Exception as e:
+            log.error(f"Error cargando mercados: {e}")
 
     def _load_config(self):
         try:
@@ -43,8 +43,6 @@ class BinanceConnector:
                     
                     self.config = new_config
                     
-                    # Si ha canviat la xarxa O si abans no teníem connexió (self.exchange is None)
-                    # intentem reconnectar
                     if old_testnet != new_testnet or self.exchange is None:
                         log.warning(f"🔄 RECONFIGURACIÓN DE RED: {'TESTNET' if new_testnet else 'REAL'}. Conectando...")
                         self._connect()
@@ -58,7 +56,6 @@ class BinanceConnector:
         return False
 
     def _connect(self):
-        # Recarreguem variables d'entorn per si l'usuari ha tocat el .env sense reiniciar
         load_dotenv(dotenv_path='config/.env', override=True)
         
         use_testnet = self.config.get('system', {}).get('use_testnet', True)
@@ -72,9 +69,8 @@ class BinanceConnector:
             secret_key = os.getenv('BINANCE_SECRET_KEY_REAL')
             log.warning("🚨 Intentando conectar a BINANCE REAL (DINERO REAL) 🚨")
 
-        # Si falten claus, NO PETEM. Simplement avisem i quedem a l'espera.
         if not api_key or not secret_key:
-            log.error(f"❌ FALTAN CLAVES para modo {'TESTNET' if use_testnet else 'REAL'}. Configura el .env o cambia el modo en la Web.")
+            log.error(f"❌ FALTAN CLAVES para modo {'TESTNET' if use_testnet else 'REAL'}.")
             self.exchange = None
             return
 
@@ -89,7 +85,6 @@ class BinanceConnector:
             if use_testnet:
                 self.exchange.set_sandbox_mode(True)
             
-            # Provem connexió bàsica
             self.exchange.fetch_time()
             log.success(f"✅ Conexión EXITOSA con Binance ({'TESTNET' if use_testnet else 'REAL'}).")
 
@@ -105,36 +100,49 @@ class BinanceConnector:
         except Exception:
             return False
 
-    # Totes les funcions següents han de comprovar si self.exchange existeix
     def get_asset_balance(self, asset):
+        """Retorna només el saldo LLIURE (per posar noves ordres)"""
         if not self.exchange: return 0.0
         try:
             balance = self.exchange.fetch_balance()
-            return balance.get(asset, {}).get('free', 0.0)
-        except: return 0.0
+            return float(balance.get(asset, {}).get('free', 0.0))
+        except Exception as e:
+            return 0.0
 
     def get_total_balance(self, asset):
+        """Retorna el saldo TOTAL (Lliure + Bloquejat en ordres)"""
         if not self.exchange: return 0.0
         try:
             balance = self.exchange.fetch_balance()
-            return balance.get(asset, {}).get('total', 0.0)
-        except: return 0.0
+            # CANVI CLAU: Sumem explícitament free + used
+            if asset in balance:
+                free = float(balance[asset].get('free', 0.0))
+                used = float(balance[asset].get('used', 0.0)) # 'used' són els fons en ordres
+                return free + used
+            return 0.0
+        except Exception as e:
+            return 0.0
 
     def fetch_current_price(self, symbol):
         if not self.exchange: return 0.0
         try:
             ticker = self.exchange.fetch_ticker(symbol)
-            return ticker['last']
-        except: return 0.0
+            return float(ticker['last'])
+        except Exception as e:
+            return 0.0
 
     def place_order(self, symbol, side, amount, price):
         if not self.exchange: return None
+        params = {}
         try:
-            order = self.exchange.create_order(symbol, 'limit', side, amount, price, {})
+            order = self.exchange.create_order(symbol, 'limit', side, amount, price, params)
             log.trade(symbol, side, price, amount)
             return order
+        except ccxt.InsufficientFunds as e:
+             log.error(f"FONDOS INSUFICIENTES: {e}")
+             return None
         except Exception as e:
-            log.error(f"Error orden: {e}")
+            log.error(f"Error colocando orden: {e}")
             return None
 
     def place_market_sell(self, symbol, amount):
@@ -143,35 +151,46 @@ class BinanceConnector:
             log.warning(f"Ejecutando Venta a Mercado {symbol} Cantidad: {amount}")
             return self.exchange.create_order(symbol, 'market', 'sell', amount)
         except Exception as e:
-            log.error(f"Error Market Sell: {e}")
+            log.error(f"Error en Market Sell: {e}")
             return None
 
     def cancel_order(self, order_id, symbol):
         if not self.exchange: return None
         try:
             return self.exchange.cancel_order(order_id, symbol)
-        except: return None
+        except Exception as e:
+            log.error(f"Error cancelando orden {order_id}: {e}")
+            return None
 
     def cancel_all_orders(self, symbol):
         if not self.exchange: return None
         try:
             return self.exchange.cancel_all_orders(symbol)
-        except: return None
+        except ccxt.OrderNotFound:
+            return None
+        except Exception as e:
+            if "-2011" in str(e): return None
+            log.error(f"Error cancelando órdenes {symbol}: {e}")
+            return None
             
     def fetch_open_orders(self, symbol):
         if not self.exchange: return []
         try:
             return self.exchange.fetch_open_orders(symbol)
-        except: return []
+        except Exception as e:
+            return []
 
     def fetch_candles(self, symbol, timeframe='15m', limit=50):
         if not self.exchange: return []
         try:
             return self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-        except: return []
+        except Exception as e:
+            log.error(f"Error obteniendo velas: {e}")
+            return []
 
     def fetch_my_trades(self, symbol, limit=20):
         if not self.exchange: return []
         try:
             return self.exchange.fetch_my_trades(symbol, limit=limit)
-        except: return []
+        except Exception as e:
+            return []

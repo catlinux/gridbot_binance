@@ -11,6 +11,8 @@ import json5
 from datetime import datetime
 from core.database import BotDatabase 
 from utils.telegram import send_msg
+from utils.logger import log
+from dotenv import load_dotenv 
 
 app = FastAPI()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -35,10 +37,23 @@ class CloseOrderRequest(BaseModel):
     side: str
     amount: float
 
-def start_server(bot, host="0.0.0.0", port=8000):
+# --- FUNCIÓ D'INICI DEL SERVIDOR (ADAPTADA PER A DEV/PROD) ---
+def start_server(bot, host=None, port=None):
     global bot_instance
     bot_instance = bot
+    
+    # Carreguem variables d'entorn per si cal
+    load_dotenv('config/.env', override=True)
+    
+    # Si main.py no ens passa host/port, els busquem al .env o posem valors per defecte
+    if host is None:
+        host = os.getenv('WEB_HOST', '127.0.0.1') 
+    
+    if port is None:
+        port = int(os.getenv('WEB_PORT', 8000))
+        
     uvicorn.run(app, host=host, port=port, log_level="error")
+# -------------------------------------------------------------
 
 def format_uptime(seconds):
     if seconds < 0: return "0s"
@@ -57,167 +72,195 @@ async def read_root(request: Request):
 async def get_status():
     if not bot_instance: return {"status": "Offline"}
     
-    status_text = "Stopped"
-    if bot_instance.is_running:
-        status_text = "Paused" if bot_instance.is_paused else "Running"
-
-    prices = db.get_all_prices()
-    portfolio = []
-    current_total_equity = 0.0
-    
     try:
-        usdc_balance = bot_instance.connector.get_total_balance('USDC')
-    except: usdc_balance = 0.0
-    
-    portfolio.append({"name": "USDC", "value": round(usdc_balance, 2)})
-    current_total_equity += usdc_balance
+        status_text = "Stopped"
+        if bot_instance.is_running:
+            status_text = "Paused" if bot_instance.is_paused else "Running"
 
-    holding_values = {}
-    current_prices_map = {}
-
-    pairs_to_check = bot_instance.active_pairs
-    
-    for symbol in pairs_to_check:
-        base = symbol.split('/')[0]
+        prices = db.get_all_prices()
+        portfolio = []
+        current_total_equity = 0.0
+        
         try:
-            qty = bot_instance.connector.get_total_balance(base)
-            price = prices.get(symbol, 0.0)
-            if price == 0 and bot_instance.is_running: 
-                price = bot_instance.connector.fetch_current_price(symbol)
-            
-            if price > 0:
-                current_prices_map[symbol] = price 
-                val = qty * price
-                holding_values[symbol] = val 
-                if val > 0.5: 
-                    portfolio.append({"name": base, "value": round(val, 2)})
-                    current_total_equity += val
-        except: pass
-
-    global_start = db.get_global_start_balance()
-    if global_start == 0: global_start = current_total_equity
-    global_pnl_total = current_total_equity - global_start
-
-    global_stats = db.get_stats(from_timestamp=0)
-    global_cash_flow = global_stats['per_coin_stats']['cash_flow']
-    global_trades_map = global_stats['per_coin_stats']['trades']
-    
-    session_start_ts = bot_instance.global_start_time
-    if bot_instance.is_running:
-        session_uptime_str = format_uptime(time.time() - session_start_ts)
-    else:
-        session_uptime_str = "OFF"
-
-    first_run_ts = db.get_first_run_timestamp()
-    total_uptime_str = format_uptime(time.time() - first_run_ts)
-
-    session_stats = db.get_stats(from_timestamp=session_start_ts)
-    session_cash_flow = session_stats['per_coin_stats']['cash_flow']
-    session_qty_delta = session_stats['per_coin_stats']['qty_delta']
-
-    strategies_data = []
-    accumulated_session_pnl = 0.0
-
-    for symbol in pairs_to_check:
-        strat_conf = bot_instance.pairs_map.get(symbol, {}).get('strategy', {})
-        trades_count = global_trades_map.get(symbol, 0)
-        curr_price = current_prices_map.get(symbol, 0.0)
+            usdc_balance = bot_instance.connector.get_total_balance('USDC')
+        except: usdc_balance = 0.0
         
-        cf_global = global_cash_flow.get(symbol, 0.0)
-        curr_val = holding_values.get(symbol, 0.0)
-        init_val = db.get_coin_initial_balance(symbol)
+        portfolio.append({"name": "USDC", "value": round(usdc_balance, 2)})
+        current_total_equity += usdc_balance
+
+        holding_values = {}
+        current_prices_map = {}
+
+        # Llista segura de parells
+        pairs_to_check = bot_instance.active_pairs if bot_instance.active_pairs else []
         
-        if curr_price == 0:
-            strat_pnl_global = 0.0
-            strat_pnl_session = 0.0
+        for symbol in pairs_to_check:
+            base = symbol.split('/')[0]
+            try:
+                qty = bot_instance.connector.get_total_balance(base)
+                price = prices.get(symbol, 0.0)
+                if price == 0 and bot_instance.is_running: 
+                    price = bot_instance.connector.fetch_current_price(symbol)
+                
+                if price > 0:
+                    current_prices_map[symbol] = price 
+                    val = qty * price
+                    holding_values[symbol] = val 
+                    if val > 0.5: 
+                        portfolio.append({"name": base, "value": round(val, 2)})
+                        current_total_equity += val
+            except: pass
+
+        global_start = db.get_global_start_balance()
+        if global_start == 0: global_start = current_total_equity
+        global_pnl_total = current_total_equity - global_start
+
+        # Estadístiques
+        global_stats = db.get_stats(from_timestamp=0)
+        global_trades_map = global_stats['per_coin_stats']['trades']
+        global_cash_flow = global_stats['per_coin_stats']['cash_flow']
+        
+        session_start_ts = bot_instance.global_start_time
+        if bot_instance.is_running:
+            session_uptime_str = format_uptime(time.time() - session_start_ts)
         else:
-            if init_val == 0.0 and curr_val > 0:
-                init_val = curr_val
-            
-            strat_pnl_global = curr_val - init_val + cf_global
-            
-            if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
-                 strat_pnl_global = 0.0
+            session_uptime_str = "OFF"
 
-            cf_session = session_cash_flow.get(symbol, 0.0)
-            qty_change = session_qty_delta.get(symbol, 0.0)
-            inventory_value_change = qty_change * curr_price
-            strat_pnl_session = inventory_value_change + cf_session
-        
-        accumulated_session_pnl += strat_pnl_session
+        first_run_ts = db.get_first_run_timestamp()
+        total_uptime_str = format_uptime(time.time() - first_run_ts)
 
-        strategies_data.append({
-            "symbol": symbol,
-            "grids": strat_conf.get('grids_quantity', '-'),
-            "amount": strat_conf.get('amount_per_grid', '-'),
-            "spread": strat_conf.get('grid_spread', '-'),
-            "total_trades": trades_count,
-            "total_pnl": round(strat_pnl_global, 2),  
-            "session_pnl": round(strat_pnl_session, 2)
-        })
+        session_stats = db.get_stats(from_timestamp=session_start_ts)
+        session_cash_flow = session_stats['per_coin_stats']['cash_flow']
+        session_qty_delta = session_stats['per_coin_stats']['qty_delta']
 
-    return {
-        "status": status_text,
-        "active_pairs": bot_instance.active_pairs,
-        "balance_usdc": round(usdc_balance, 2),
-        "total_usdc_value": round(current_total_equity, 2),
-        "portfolio_distribution": portfolio,
-        "session_trades_distribution": session_stats['trades_distribution'],
-        "global_trades_distribution": global_stats['trades_distribution'],
-        "strategies": strategies_data,
-        "stats": {
-            "session": {
-                "trades": session_stats['trades'],
-                "profit": round(accumulated_session_pnl, 2),
-                "best_coin": session_stats['best_coin'],
-                "uptime": session_uptime_str
-            },
-            "global": {
-                "trades": global_stats['trades'],
-                "profit": round(global_pnl_total, 2),
-                "best_coin": global_stats['best_coin'],
-                "uptime": total_uptime_str
+        strategies_data = []
+        accumulated_session_pnl = 0.0
+
+        for symbol in pairs_to_check:
+            try:
+                strat_conf = bot_instance.pairs_map.get(symbol, {}).get('strategy', {})
+                trades_count = global_trades_map.get(symbol, 0)
+                curr_price = current_prices_map.get(symbol, 0.0)
+                
+                cf_global = global_cash_flow.get(symbol, 0.0)
+                curr_val = holding_values.get(symbol, 0.0)
+                init_val = db.get_coin_initial_balance(symbol)
+                
+                if curr_price == 0:
+                    strat_pnl_global = 0.0
+                    strat_pnl_session = 0.0
+                else:
+                    # CORRECCIÓ AUTOMÀTICA: Si falta init_val, el guardem ara mateix
+                    if init_val == 0.0 and curr_val > 0:
+                        init_val = curr_val
+                        db.set_coin_initial_balance(symbol, init_val)
+                    
+                    strat_pnl_global = curr_val - init_val + cf_global
+                    
+                    if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
+                        strat_pnl_global = 0.0
+
+                    cf_session = session_cash_flow.get(symbol, 0.0)
+                    qty_change = session_qty_delta.get(symbol, 0.0)
+                    inventory_value_change = qty_change * curr_price
+                    strat_pnl_session = inventory_value_change + cf_session
+                
+                accumulated_session_pnl += strat_pnl_session
+
+                strategies_data.append({
+                    "symbol": symbol,
+                    "grids": strat_conf.get('grids_quantity', '-'),
+                    "amount": strat_conf.get('amount_per_grid', '-'),
+                    "spread": strat_conf.get('grid_spread', '-'),
+                    "total_trades": trades_count,
+                    "total_pnl": round(strat_pnl_global, 2),  
+                    "session_pnl": round(strat_pnl_session, 2)
+                })
+            except Exception as e:
+                log.error(f"Error procesando stats {symbol}: {e}")
+
+        return {
+            "status": status_text,
+            "active_pairs": pairs_to_check,
+            "balance_usdc": round(usdc_balance, 2),
+            "total_usdc_value": round(current_total_equity, 2),
+            "portfolio_distribution": portfolio,
+            "session_trades_distribution": session_stats['trades_distribution'],
+            "global_trades_distribution": global_stats['trades_distribution'],
+            "strategies": strategies_data,
+            "stats": {
+                "session": {
+                    "trades": session_stats['trades'],
+                    "profit": round(accumulated_session_pnl, 2),
+                    "best_coin": session_stats['best_coin'],
+                    "uptime": session_uptime_str
+                },
+                "global": {
+                    "trades": global_stats['trades'],
+                    "profit": round(global_pnl_total, 2),
+                    "best_coin": global_stats['best_coin'],
+                    "uptime": total_uptime_str
+                }
             }
         }
-    }
+    except Exception as e:
+        log.error(f"FATAL API ERROR: {e}")
+        return {
+            "status": "Error",
+            "active_pairs": [],
+            "balance_usdc": 0,
+            "total_usdc_value": 0,
+            "portfolio_distribution": [],
+            "session_trades_distribution": [],
+            "global_trades_distribution": [],
+            "strategies": [],
+            "stats": {
+                "session": {"trades":0,"profit":0,"best_coin":"-","uptime":"-"},
+                "global": {"trades":0,"profit":0,"best_coin":"-","uptime":"-"}
+            }
+        }
 
 @app.get("/api/history/balance")
 async def get_balance_history_api():
-    full_hist = db.get_balance_history(from_timestamp=0)
-    session_start = bot_instance.global_start_time if bot_instance else 0
-    session_hist = [x for x in full_hist if x[0] >= session_start]
-    
-    def fmt(rows):
-        return [[r[0]*1000, round(r[1], 2)] for r in rows]
+    try:
+        full_hist = db.get_balance_history(from_timestamp=0)
+        session_start = bot_instance.global_start_time if bot_instance else 0
+        session_hist = [x for x in full_hist if x[0] >= session_start]
         
-    return {
-        "global": fmt(full_hist),
-        "session": fmt(session_hist)
-    }
+        def fmt(rows):
+            return [[r[0]*1000, round(r[1], 2)] for r in rows]
+            
+        return {
+            "global": fmt(full_hist),
+            "session": fmt(session_hist)
+        }
+    except: return {"global": [], "session": []}
 
 @app.get("/api/orders")
 async def get_all_orders():
-    raw_orders = db.get_all_active_orders()
-    prices = db.get_all_prices()
-    enhanced_orders = []
-    
-    for o in raw_orders:
-        symbol = o['symbol']
-        current_price = prices.get(symbol, 0.0)
-        if current_price == 0 and bot_instance and bot_instance.is_running:
-             current_price = bot_instance.connector.fetch_current_price(symbol)
+    try:
+        raw_orders = db.get_all_active_orders()
+        prices = db.get_all_prices()
+        enhanced_orders = []
+        
+        for o in raw_orders:
+            symbol = o['symbol']
+            current_price = prices.get(symbol, 0.0)
+            if current_price == 0 and bot_instance and bot_instance.is_running:
+                 current_price = bot_instance.connector.fetch_current_price(symbol)
 
-        o['current_price'] = current_price
-        o['total_value'] = o['amount'] * o['price']
-        o['entry_price'] = 0.0
-        if o['side'] == 'sell' and bot_instance:
-            try:
-                strat = bot_instance.pairs_map.get(symbol, {}).get('strategy', bot_instance.config['default_strategy'])
-                spread = strat['grid_spread']
-                o['entry_price'] = o['price'] / (1 + (spread / 100.0))
-            except: pass
-        enhanced_orders.append(o)
-    return enhanced_orders
+            o['current_price'] = current_price
+            o['total_value'] = o['amount'] * o['price']
+            o['entry_price'] = 0.0
+            if o['side'] == 'sell' and bot_instance:
+                try:
+                    strat = bot_instance.pairs_map.get(symbol, {}).get('strategy', bot_instance.config['default_strategy'])
+                    spread = strat['grid_spread']
+                    o['entry_price'] = o['price'] / (1 + (spread / 100.0))
+                except: pass
+            enhanced_orders.append(o)
+        return enhanced_orders
+    except: return []
 
 @app.post("/api/close_order")
 async def close_order_api(req: CloseOrderRequest):
@@ -228,54 +271,62 @@ async def close_order_api(req: CloseOrderRequest):
 
 @app.get("/api/details/{symbol:path}")
 async def get_pair_details(symbol: str, timeframe: str = '15m'):
-    data = db.get_pair_data(symbol)
-    raw_candles = []
-    if bot_instance and bot_instance.is_running:
-        try: raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=100)
-        except: pass
-    if not raw_candles: raw_candles = data['candles']
-    
-    chart_data = []
-    for candle in raw_candles:
-        dt = datetime.fromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M')
-        chart_data.append([dt, candle[1], candle[4], candle[3], candle[2]])
-
-    pnl_value = 0.0
-    global_pnl = 0.0
-    
-    if bot_instance:
-        current_price = data['price']
-        if current_price == 0 and bot_instance.is_running: 
-            current_price = bot_instance.connector.fetch_current_price(symbol)
-
-        if current_price > 0:
-            global_stats = db.get_stats(from_timestamp=0)
-            cf_global = global_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
-            base = symbol.split('/')[0]
-            qty_held = 0.0
-            try: qty_held = bot_instance.connector.get_total_balance(base)
+    try:
+        data = db.get_pair_data(symbol)
+        raw_candles = []
+        if bot_instance and bot_instance.is_running:
+            try: raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=100)
             except: pass
-            current_val = qty_held * current_price
-            init_val = db.get_coin_initial_balance(symbol)
-            if init_val == 0.0 and current_val > 0: init_val = current_val
-            global_pnl = current_val - init_val + cf_global
-            
-            session_start_ts = bot_instance.global_start_time
-            session_stats = db.get_stats(from_timestamp=session_start_ts)
-            cf_session = session_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
-            qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
-            pnl_value = (qty_delta * current_price) + cf_session
+        if not raw_candles: raw_candles = data['candles']
+        
+        chart_data = []
+        for candle in raw_candles:
+            dt = datetime.fromtimestamp(candle[0]/1000).strftime('%Y-%m-%d %H:%M')
+            chart_data.append([dt, candle[1], candle[4], candle[3], candle[2]])
 
-    return {
-        "symbol": symbol,
-        "price": data['price'],
-        "open_orders": data['open_orders'],
-        "trades": data['trades'],
-        "chart_data": chart_data,
-        "grid_lines": data['grid_levels'],
-        "session_pnl": round(pnl_value, 2), 
-        "global_pnl": round(global_pnl, 2)   
-    }
+        pnl_value = 0.0
+        global_pnl = 0.0
+        
+        if bot_instance:
+            current_price = data['price']
+            if current_price == 0 and bot_instance.is_running: 
+                current_price = bot_instance.connector.fetch_current_price(symbol)
+
+            if current_price > 0:
+                global_stats = db.get_stats(from_timestamp=0)
+                cf_global = global_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
+                base = symbol.split('/')[0]
+                qty_held = 0.0
+                try: qty_held = bot_instance.connector.get_total_balance(base)
+                except: pass
+                current_val = qty_held * current_price
+                init_val = db.get_coin_initial_balance(symbol)
+                
+                if init_val == 0.0 and current_val > 0:
+                    init_val = current_val
+                    db.set_coin_initial_balance(symbol, init_val)
+
+                global_pnl = current_val - init_val + cf_global
+                
+                session_start_ts = bot_instance.global_start_time
+                session_stats = db.get_stats(from_timestamp=session_start_ts)
+                cf_session = session_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
+                qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
+                pnl_value = (qty_delta * current_price) + cf_session
+
+        return {
+            "symbol": symbol,
+            "price": data['price'],
+            "open_orders": data['open_orders'],
+            "trades": data['trades'],
+            "chart_data": chart_data,
+            "grid_lines": data['grid_levels'],
+            "session_pnl": round(pnl_value, 2), 
+            "global_pnl": round(global_pnl, 2)   
+        }
+    except Exception as e:
+        log.error(f"Error details {symbol}: {e}")
+        return {"symbol": symbol, "price": 0, "open_orders": [], "trades": [], "chart_data": [], "grid_lines": [], "session_pnl": 0, "global_pnl": 0}
 
 @app.get("/api/config")
 async def get_config():
