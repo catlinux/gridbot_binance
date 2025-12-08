@@ -70,7 +70,16 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 12,
-        "grid_spread": 0.8
+        "grid_spread": 0.5
+      }
+    },
+    {
+      "symbol": "PAXG/USDC",
+      "enabled": false,
+      "strategy": {
+        "grids_quantity": 8,
+        "amount_per_grid": 20,
+        "grid_spread": 0.4
       }
     }
   ]
