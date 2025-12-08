@@ -1,6 +1,7 @@
 gridbot_binance/
 ├── config/
 │   ├── config.json5       # Configuració editable (Estratègies i Parells)
+│   ├── env.example        # Arxiu de mostra del .env
 │   └── .env               # Claus API i Secrets (NO pujar a Git)
 ├── core/
 │   ├── __init__.py
@@ -10,6 +11,7 @@ gridbot_binance/
 ├── utils/
 │   ├── __init__.py
 │   ├── logger.py          # Sistema de logs i colors
+│   └── telegram.py        # Sistema d'alertes al telegram
 ├── web/
 │   ├── static/            # Arxius estàtics (Frontend optimitzat)
 │   │   ├── css/
@@ -19,6 +21,10 @@ gridbot_binance/
 │   ├── templates/
 │   │   └── index.html     # Estructura HTML base
 │   └── server.py          # API Backend (FastAPI)
+├── .gitignore             # Arxiu de seguretat per mantenir dades sensibles sense pujar al github
+├── bot_data.db            # Base de dades e¡del bot
 ├── main.py                # Punt d'entrada (Run)
-├── limpieza.py              # Script d'utilitat per cancel·lar tot
+├── limpieza.py            # Script d'utilitat per cancel·lar tot
+├── estructura.txt         # Estructura amb arbre dels arxius
+├── README.md              # Arxiu explicatiu de les funcions del bot per al github
 └── requirements.txt       # Llibreries necessàries

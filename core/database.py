@@ -302,3 +302,28 @@ class BotDatabase:
         conn.commit()
         conn.close()
         return True
+
+    def prune_old_data(self, days_keep=30):
+        """Esborra dades de fa més de X dies"""
+        cutoff = time.time() - (days_keep * 24 * 3600)
+        # Els trades en binance van en mil·lisegons, els logs propis en segons
+        cutoff_ms = cutoff * 1000
+        
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        
+        # 1. Esborrar Trades Antics
+        cursor.execute("DELETE FROM trade_history WHERE timestamp < ?", (cutoff_ms,))
+        deleted_trades = cursor.rowcount
+        
+        # 2. Esborrar Historial de Balanç Antic
+        cursor.execute("DELETE FROM balance_history WHERE timestamp < ?", (cutoff,))
+        deleted_balance = cursor.rowcount
+        
+        # 3. Compactar la DB si hem esborrat molt
+        if deleted_trades > 0 or deleted_balance > 0:
+            cursor.execute("VACUUM")
+
+        conn.commit()
+        conn.close()
+        return deleted_trades, deleted_balance

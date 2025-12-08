@@ -8,11 +8,10 @@ let charts = {};
 let initialized = false;
 let currentTimeframe = '15m';
 let currentConfigObj = null; 
-let fullGlobalHistory = []; // Per guardar tot l'històric i filtrar localment
-
+let fullGlobalHistory = []; 
 
 // ==========================================
-// 2. FORMATTERS I HELPERS (UTILITATS)
+// 2. FORMATTERS I HELPERS
 // ==========================================
 
 const fmtUSDC = (num) => { 
@@ -23,7 +22,7 @@ const fmtUSDC = (num) => {
 const fmtPrice = (num) => {
     if (num === undefined || num === null) return '--';
     const val = parseFloat(num);
-    // 4 decimals si val menys de 10 (per XRP, ADA, DOGE...)
+    if (val < 1.0) return val.toLocaleString('es-ES', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
     if (val < 10.0) return val.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
     if (val >= 1000) return val.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     return val.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -57,7 +56,7 @@ const updateColorValue = (elementId, value, suffix = '') => {
 
 
 // ==========================================
-// 3. GESTIÓ DE LA UI (NAVEGACIÓ, FORMULARIS)
+// 3. GESTIÓ DE LA UI
 // ==========================================
 
 function setMode(mode) {
@@ -65,7 +64,6 @@ function setMode(mode) {
     if (mode === 'home') loadHome();
     else if (mode !== 'config') loadSymbol(mode);
     
-    // Redimensionar gràfics si cal
     if (mode !== 'home' && mode !== 'config') {
         setTimeout(() => {
             const safe = mode.replace('/', '_');
@@ -83,7 +81,6 @@ function setTimeframe(tf) {
     if (currentMode !== 'home' && currentMode !== 'config') loadSymbol(currentMode);
 }
 
-// --- GESTIÓ DE PESTANYES (SYNC) ---
 function ensureTabExists(symbol) {
     const safe = symbol.replace('/', '_');
     const tabList = document.getElementById('mainTabs');
@@ -95,7 +92,6 @@ function ensureTabExists(symbol) {
     li.className = 'nav-item';
     li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
     
-    // Inserim abans de la pestanya de Config per mantenir l'ordre
     const configTabLi = document.getElementById('tab-config').parentElement;
     tabList.insertBefore(li, configTabLi);
 
@@ -178,7 +174,6 @@ async function loadConfigForm() {
         
         document.getElementById('sys-cycle').value = currentConfigObj.system.cycle_delay;
         
-        // Selector Testnet
         const configTab = document.getElementById('content-config');
         const systemCardBody = configTab.querySelector('.card-body'); 
         
@@ -286,7 +281,6 @@ function renderDonut(domId, data, isCurrency = false) {
     });
 }
 
-// AQUESTA ÉS LA FUNCIÓ QUE FALTAVA:
 function renderLineChart(domId, data, color) {
     const dom = document.getElementById(domId);
     if (!dom) return;
@@ -334,33 +328,19 @@ function renderLineChart(domId, data, color) {
     chart.setOption(option);
 }
 
-// I AQUESTA:
-function filterHistory(hours) {
-    document.querySelectorAll('.hist-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
-    
-    if (hours === 'all') {
-        renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6');
-        return;
-    }
-    const cutoff = Date.now() - (hours * 3600 * 1000);
-    const filtered = fullGlobalHistory.filter(item => item[0] >= cutoff);
-    renderLineChart('balanceChartGlobal', filtered, '#3b82f6');
-}
-
-// I AQUESTA TAMBÉ FALTAVA:
+// --- FUNCIÓ RESTAURADA ---
 async function loadBalanceCharts() {
     try {
         const res = await fetch('/api/history/balance');
         if (!res.ok) return;
         const data = await res.json();
-        
         fullGlobalHistory = data.global; 
         renderLineChart('balanceChartSession', data.session, '#0ecb81');
         renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); 
     } catch(e) { console.error("Error loading charts", e); }
 }
 
+// --- FUNCIÓ DE CANDLES (AMB CORRECCIÓ OVERLAP) ---
 function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     const dom = document.getElementById(`chart-${safeSym}`);
     if(!dom) return;
@@ -369,18 +349,46 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     let chart = echarts.getInstanceByDom(dom);
     if (!chart) chart = echarts.init(dom);
 
-    // Optimització: Gràfic de LÍNIA en lloc d'espelmes per rapidesa
-    const priceData = data.map(i => [i[0], parseFloat(i[2])]); // Use close price
-    const currentPrice = priceData[priceData.length - 1][1];
+    // 1. Dades Preu Tancament
+    const priceData = data.map(i => [i[0], parseFloat(i[2])]); 
     
-    // Zoom automàtic
-    let allPrices = priceData.map(d => d[1]);
-    activeOrders.forEach(o => allPrices.push(parseFloat(o.price)));
-    let yMin = Math.min(...allPrices);
-    let yMax = Math.max(...allPrices);
-    const padding = (yMax - yMin) * 0.005;
-    yMin = yMin - padding;
-    yMax = yMax + padding;
+    // 2. CÀLCUL MANUAL DE LÍMITS DE L'EIX Y
+    let allPrices = [];
+    
+    data.forEach(candle => {
+        const low = parseFloat(candle[3]);
+        const high = parseFloat(candle[4]);
+        if (!isNaN(low)) allPrices.push(low);
+        if (!isNaN(high)) allPrices.push(high);
+    });
+
+    activeOrders.forEach(o => {
+        const p = parseFloat(o.price);
+        if (!isNaN(p)) allPrices.push(p);
+    });
+
+    gridLines.forEach(g => {
+        const p = parseFloat(g);
+        if (!isNaN(p)) allPrices.push(p);
+    });
+
+    let yMin = 0; 
+    let yMax = 0;
+
+    if (allPrices.length > 0) {
+        yMin = Math.min(...allPrices);
+        yMax = Math.max(...allPrices);
+
+        const padding = (yMax - yMin) * 0.05; 
+        const safePadding = padding === 0 ? yMin * 0.02 : padding; 
+        
+        yMin -= safePadding;
+        yMax += safePadding;
+    } else {
+        const lastPrice = priceData.length ? priceData[priceData.length-1][1] : 0;
+        yMin = lastPrice * 0.95;
+        yMax = lastPrice * 1.05;
+    }
 
     const gridMarkLines = gridLines.map(p => ({
         yAxis: parseFloat(p),
@@ -398,20 +406,22 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
         },
         label: {
             show: true,
-            position: 'end', 
+            position: 'end',
             formatter: (o.side === 'buy' ? 'COMPRA' : 'VENTA') + ' ' + fmtPrice(o.price),
             color: '#fff',
             backgroundColor: o.side === 'buy' ? '#0ecb81' : '#f6465d',
             padding: [3, 5],
             borderRadius: 3,
             fontSize: 10,
-            fontWeight: 'bold'
+            fontWeight: 'bold',
+            distance: [0, 0]
         }
     }));
 
     const option = { 
         animation: false, 
-        grid: { left: 10, right: 75, top: 10, bottom: 20, containLabel: true }, 
+        grid: { left: 10, right: 85, top: 10, bottom: 20, containLabel: true }, 
+        
         tooltip: { 
             trigger: 'axis', 
             axisPointer: { type: 'cross' },
@@ -422,6 +432,7 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
                 return `<b>${date}</b><br/>Precio: ${val}`;
             }
         }, 
+        
         xAxis: { 
             type: 'category', 
             data: data.map(i => i[0]), 
@@ -432,30 +443,39 @@ function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
             axisLabel: { show: false } 
         }, 
         yAxis: { 
-            scale: true, 
+            type: 'value',
             position: 'right', 
             min: yMin,
             max: yMax,
             splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
-            axisLabel: { formatter: function (value) { return fmtPrice(value); } }
+            axisLabel: { 
+                formatter: function (value) { return fmtPrice(value); },
+                fontSize: 10 
+            }
         }, 
-        series: [{ 
-            type: 'line', 
-            data: priceData,
-            showSymbol: false,
-            lineStyle: { width: 2, color: '#3b82f6' },
-            areaStyle: {
-                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
-                    { offset: 1, color: 'rgba(59, 130, 246, 0)' }
-                ])
-            },
-            markLine: { 
-                symbol: 'none', 
-                data: [...gridMarkLines, ...orderMarkLines],
-                silent: true
-            } 
-        }] 
+        series: [
+            { 
+                type: 'line', 
+                data: priceData,
+                showSymbol: false,
+                lineStyle: { width: 2, color: '#3b82f6' },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
+                        { offset: 1, color: 'rgba(59, 130, 246, 0)' }
+                    ])
+                },
+                markLine: { 
+                    symbol: 'none', 
+                    data: [...gridMarkLines, ...orderMarkLines],
+                    silent: true,
+                    labelLayout: {
+                        hideOverlap: false 
+                    },
+                    animation: false
+                } 
+            }
+        ] 
     };
     
     chart.setOption(option);
@@ -522,16 +542,20 @@ async function loadHome() {
         renderDonut('sessionTradesChart', data.session_trades_distribution, false);
         renderDonut('globalTradesChart', data.global_trades_distribution, false);
         
-        // AQUI CRIDEM ALS GRÀFICS DE LÍNIA
+        // Recuperada la crida a la funció
         loadBalanceCharts();
 
         const strategiesBody = document.getElementById('strategies-table-body');
         if (strategiesBody) {
             strategiesBody.innerHTML = data.strategies.map(s => {
-                const totalPnlClass = s.total_pnl >= 0 ? 'text-success' : 'text-danger';
-                const totalPnlSign = s.total_pnl >= 0 ? '+' : '';
-                const totalPnlText = s.total_trades > 0 ? `${totalPnlSign}${fmtUSDC(s.total_pnl)} $` : '0,00 $';
-                const totalPnlFinalClass = s.total_trades > 0 ? totalPnlClass : 'text-muted';
+                
+                let displayTotalPnl = s.total_pnl;
+                if (Math.abs(displayTotalPnl) > 5000) displayTotalPnl = 0.00;
+
+                const totalPnlClass = displayTotalPnl >= 0 ? 'text-success' : 'text-danger';
+                const totalPnlSign = displayTotalPnl >= 0 ? '+' : '';
+                const totalPnlText = `${totalPnlSign}${fmtUSDC(displayTotalPnl)} $`;
+                const totalPnlFinalClass = s.total_trades > 0 || displayTotalPnl !== 0 ? totalPnlClass : 'text-muted';
 
                 const sessPnlClass = s.session_pnl >= 0 ? 'text-success' : 'text-danger';
                 const sessPnlSign = s.session_pnl >= 0 ? '+' : '';
@@ -771,7 +795,6 @@ init();
 setInterval(() => { 
     if (currentMode === 'home') { 
         loadHome(); 
-        // AQUESTA ÉS LA LÍNIA QUE ABANS FALTAVA I QUE ARA ESTÀ ASSEGURADA:
         loadBalanceCharts(); 
     } else if (currentMode !== 'config') { 
         loadSymbol(currentMode); 

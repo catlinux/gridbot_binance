@@ -27,6 +27,9 @@ class GridBot:
         # Control d'alertes
         self.processed_trade_ids = set()
         self.session_trades_count = {} 
+        
+        # Control de manteniment
+        self.last_prune_time = 0 
 
     def _refresh_pairs_map(self):
         self.pairs_map = {p['symbol']: p for p in self.config['pairs'] if p['enabled']}
@@ -38,6 +41,18 @@ class GridBot:
             if self.is_paused or not self.connector.exchange:
                 time.sleep(1)
                 continue
+            
+            # --- MANTENIMENT DE BBDD (Cada 24h) ---
+            if time.time() - self.last_prune_time > 86400:
+                try:
+                    log.info("🧹 Ejecutando mantenimiento de Base de Datos...")
+                    d_trades, d_bal = self.db.prune_old_data(days_keep=30)
+                    if d_trades > 0 or d_bal > 0:
+                        log.success(f"DB optimizada: Borrados {d_trades} trades y {d_bal} registros antiguos.")
+                    self.last_prune_time = time.time()
+                except Exception as e:
+                    log.error(f"Error en mantenimiento DB: {e}")
+            # --------------------------------------
 
             current_pairs = list(self.active_pairs)
             for symbol in current_pairs:
@@ -57,7 +72,6 @@ class GridBot:
                 except Exception: pass
                 time.sleep(1) 
             
-            # Guardem historial de balanç cada ~60s
             if int(time.time()) % 60 == 0:
                 try:
                     total_equity = self.calculate_total_equity()
@@ -259,6 +273,7 @@ class GridBot:
         if old_testnet != new_testnet:
             network_name = "TESTNET" if new_testnet else "REAL"
             log.warning(f"🚨 CAMBIO DE RED DETECTADO A: {network_name}. Reiniciando sistema...")
+            # TRADUCCIÓ: Canvi de xarxa
             send_msg(f"🔄 <b>CAMBIO DE RED</b>\nEl bot ha pasado a modo: <b>{network_name}</b>")
             
             self.levels = {}

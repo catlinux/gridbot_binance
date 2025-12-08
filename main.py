@@ -24,7 +24,6 @@ def main():
     # 2. Instanciem el bot (es queda en standby)
     bot = GridBot()
     
-    # Log real amb les variables reals
     log.info(f"Servidor web listo en http://{HOST}:{PORT}")
     log.info("Usa 'pkill -f main.py' o Ctrl+C para detener el sistema.")
     

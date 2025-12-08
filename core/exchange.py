@@ -101,7 +101,6 @@ class BinanceConnector:
             return False
 
     def get_asset_balance(self, asset):
-        """Retorna només el saldo LLIURE (per posar noves ordres)"""
         if not self.exchange: return 0.0
         try:
             balance = self.exchange.fetch_balance()
@@ -110,11 +109,9 @@ class BinanceConnector:
             return 0.0
 
     def get_total_balance(self, asset):
-        """Retorna el saldo TOTAL (Lliure + Bloquejat en ordres)"""
         if not self.exchange: return 0.0
         try:
             balance = self.exchange.fetch_balance()
-            # CANVI CLAU: Sumem explícitament free + used
             if asset in balance:
                 free = float(balance[asset].get('free', 0.0))
                 used = float(balance[asset].get('used', 0.0)) 

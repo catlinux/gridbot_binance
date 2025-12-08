@@ -22,3 +22,4 @@ __pycache__/
 
 # --- Arxius de dades ---
 .db
+bot_data.db
