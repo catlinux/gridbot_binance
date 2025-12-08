@@ -37,6 +37,9 @@ class CloseOrderRequest(BaseModel):
     side: str
     amount: float
 
+class LiquidateRequest(BaseModel):
+    asset: str
+
 # --- FUNCIÓ D'INICI DEL SERVIDOR ---
 def start_server(bot, host=None, port=None):
     global bot_instance
@@ -262,6 +265,111 @@ async def get_all_orders():
         return enhanced_orders
     except: return []
 
+@app.get("/api/wallet")
+async def get_wallet_data():
+    if not bot_instance or not bot_instance.connector.exchange:
+        return []
+    
+    try:
+        # Obtenim balanç complet (total, free, used)
+        balances = bot_instance.connector.exchange.fetch_balance()
+        if not balances: return []
+        
+        # Obtenim preus actuals de tot el mercat (més eficient que un per un)
+        tickers = bot_instance.connector.exchange.fetch_tickers()
+        
+        wallet_list = []
+        
+        # Iterem sobre els actius que tenim (ignorant els que son 0)
+        items = balances.get('total', {}).items()
+        
+        for asset, total_qty in items:
+            if total_qty <= 0: continue
+            
+            usdc_value = 0.0
+            price = 0.0
+            
+            if asset == 'USDC':
+                usdc_value = total_qty
+                price = 1.0
+            elif asset == 'USDT':
+                # Cas especial stablecoin
+                usdc_value = total_qty
+                price = 1.0
+            else:
+                # Busquem parell amb USDC
+                symbol = f"{asset}/USDC"
+                if symbol in tickers:
+                    price = float(tickers[symbol]['last'])
+                    usdc_value = total_qty * price
+            
+            # FILTRE: Només mostrem si val més d'1 USDC
+            if usdc_value >= 1.0:
+                free_qty = balances.get(asset, {}).get('free', 0.0)
+                used_qty = balances.get(asset, {}).get('used', 0.0)
+                
+                wallet_list.append({
+                    "asset": asset,
+                    "free": free_qty,
+                    "locked": used_qty,
+                    "total": total_qty,
+                    "usdc_value": round(usdc_value, 2),
+                    "price": price
+                })
+        
+        # Ordenem per valor de major a menor
+        wallet_list.sort(key=lambda x: x['usdc_value'], reverse=True)
+        return wallet_list
+        
+    except Exception as e:
+        log.error(f"Error fetching wallet: {e}")
+        return []
+
+@app.post("/api/liquidate_asset")
+async def liquidate_asset_api(req: LiquidateRequest):
+    if not bot_instance or not bot_instance.connector.exchange:
+        raise HTTPException(status_code=503, detail="Bot no conectado")
+    
+    asset = req.asset.upper()
+    if asset == 'USDC':
+        return {"status": "error", "message": "No se puede liquidar USDC."}
+        
+    symbol = f"{asset}/USDC"
+    
+    try:
+        # 1. Cancel·lar ordres existents per alliberar saldo
+        log.warning(f"LIQUIDACIÓN MANUAL: Cancelando órdenes de {symbol}...")
+        bot_instance.connector.cancel_all_orders(symbol)
+        time.sleep(1) # Esperem que l'exchange processi
+        
+        # 2. Obtenir saldo total disponible ara
+        total_balance = bot_instance.connector.get_total_balance(asset)
+        
+        # 3. Vendre a mercat
+        if total_balance > 0:
+            log.warning(f"LIQUIDACIÓN MANUAL: Vendiendo {total_balance} {asset} a mercado...")
+            # Usem place_market_sell que ja tens a exchange.py
+            # Nota: Potser caldrà ajustar la precisió, ho fa exchange.py?
+            # exchange.py: place_market_sell fa create_order('market', 'sell')
+            
+            # Assegurem precisió mínima
+            # Per seguretat, fem la venda a través del connector
+            order = bot_instance.connector.place_market_sell(symbol, total_balance)
+            
+            if order:
+                msg = f"Activo {asset} liquidado a USDC."
+                log.success(msg)
+                send_msg(f"🔥 <b>LIQUIDACIÓN MANUAL</b>\nSe ha vendido todo el {asset} a USDC.")
+                return {"status": "success", "message": msg}
+            else:
+                raise HTTPException(status_code=400, detail="Error al ejecutar la orden de venta.")
+        else:
+            return {"status": "warning", "message": "Saldo insuficiente para vender."}
+
+    except Exception as e:
+        log.error(f"Error liquidando {asset}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/close_order")
 async def close_order_api(req: CloseOrderRequest):
     if not bot_instance: raise HTTPException(status_code=503, detail="Bot no inicializado")
@@ -342,6 +450,7 @@ async def save_config(config: ConfigUpdate):
         json5.loads(config.content)
         with open('config/config.json5', 'w') as f: f.write(config.content)
         
+        # Forcem actualització immediata al bot
         if bot_instance:
             bot_instance.connector.check_and_reload_config()
             bot_instance.config = bot_instance.connector.config

@@ -52,6 +52,7 @@ const updateColorValue = (elementId, value, suffix = '') => {
     const el = document.getElementById(elementId);
     if (!el) return;
     
+    // Optimització visual
     const newText = fmtUSDC(value) + suffix;
     if (el.innerText === newText) return;
 
@@ -71,9 +72,10 @@ function setMode(mode) {
     dataCache = {}; 
     
     if (mode === 'home') loadHome();
+    else if (mode === 'wallet') loadWallet();
     else if (mode !== 'config') loadSymbol(mode);
     
-    if (mode !== 'home' && mode !== 'config') {
+    if (mode !== 'home' && mode !== 'config' && mode !== 'wallet') {
         setTimeout(() => {
             const safe = mode.replace('/', '_');
             if (charts[safe]) charts[safe].resize();
@@ -88,7 +90,7 @@ function setTimeframe(tf) {
         btn.classList.remove('active'); 
         if(btn.innerText.toLowerCase() === tf) btn.classList.add('active'); 
     });
-    if (currentMode !== 'home' && currentMode !== 'config') loadSymbol(currentMode);
+    if (currentMode !== 'home' && currentMode !== 'config' && currentMode !== 'wallet') loadSymbol(currentMode);
 }
 
 function ensureTabExists(symbol) {
@@ -163,7 +165,7 @@ function syncTabs(activePairs) {
     const existingTabs = Array.from(tabList.querySelectorAll('li.nav-item button.nav-link'));
     existingTabs.forEach(btn => {
         const targetId = btn.getAttribute('data-bs-target').replace('#content-', '');
-        if (targetId !== 'home' && targetId !== 'config' && !safeSymbols.includes(targetId)) {
+        if (targetId !== 'home' && targetId !== 'config' && targetId !== 'wallet' && !safeSymbols.includes(targetId)) {
             btn.parentElement.remove();
             const contentDiv = document.getElementById(`content-${targetId}`);
             if (contentDiv) contentDiv.remove();
@@ -736,6 +738,82 @@ async function closeOrder(symbol, id, side, amount) {
     } catch (e) { alert("Error de conexión"); }
 }
 
+// --- FUNCIÓ NOVA: CARREGAR CARTERA SPOT ---
+async function loadWallet() {
+    const tbody = document.getElementById('wallet-table-body');
+    if(!tbody) return;
+    
+    // Spinner
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>';
+    
+    try {
+        const res = await fetch('/api/wallet');
+        const walletData = await res.json();
+        
+        if (walletData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No se han encontrado activos relevantes.</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = walletData.map(item => {
+            const asset = item.asset;
+            const isUSDC = asset === 'USDC' || asset === 'USDT';
+            
+            // Botó de liquidació (Vendre)
+            let actionBtn = '';
+            if (!isUSDC) {
+                actionBtn = `
+                    <button class="btn btn-sm btn-outline-danger" title="Cancelar órdenes y vender a mercado" onclick="liquidateAsset('${asset}')">
+                        <i class="fa-solid fa-money-bill-transfer me-1"></i> Vender
+                    </button>
+                `;
+            } else {
+                actionBtn = '<span class="text-muted small">Base</span>';
+            }
+            
+            // Estils
+            const lockedClass = item.locked > 0 ? 'text-danger fw-bold' : 'text-muted';
+            
+            return `
+                <tr>
+                    <td class="fw-bold">${asset}</td>
+                    <td>${fmtCrypto(item.free)}</td>
+                    <td class="${lockedClass}">${fmtCrypto(item.locked)}</td>
+                    <td>${fmtCrypto(item.total)}</td>
+                    <td class="fw-bold">${fmtUSDC(item.usdc_value)} $</td>
+                    <td class="text-end">${actionBtn}</td>
+                </tr>
+            `;
+        }).join('');
+        
+    } catch(e) {
+        console.error("Error carregant cartera:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error de conexión</td></tr>';
+    }
+}
+
+// --- FUNCIÓ NOVA: LIQUIDAR ACTIU ---
+async function liquidateAsset(asset) {
+    if (!confirm(`⚠️ ¿LIQUIDAR POSICIÓN DE ${asset}?\n\n1. Se cancelarán TODAS las órdenes de ${asset}/USDC.\n2. Se venderá TODO el saldo de ${asset} a precio de mercado.\n\n¿Estás seguro?`)) return;
+    
+    try {
+        const res = await fetch('/api/liquidate_asset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ asset: asset })
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+            alert(data.message);
+            loadWallet(); // Recarreguem la taula
+        } else {
+            alert("Error: " + data.detail);
+        }
+    } catch(e) {
+        alert("Error de conexión");
+    }
+}
 
 // ==========================================
 // 6. FUNCIONS DE CONTROL I INICIALITZACIÓ
@@ -850,6 +928,10 @@ setInterval(() => {
         loadHome(); 
         loadBalanceCharts(); 
     } else if (currentMode !== 'config') { 
-        loadSymbol(currentMode); 
+        // Si estem a la cartera, no cal refrescar cada 4 segons la taula
+        // només els preus si ho volguéssim, però millor manual per no saturar
+        if (currentMode !== 'wallet') {
+            loadSymbol(currentMode);
+        }
     } 
 }, 4000);

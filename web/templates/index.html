@@ -72,6 +72,11 @@
                 </button>
             </li>
             <li class="nav-item">
+                <button class="nav-link" id="tab-wallet" data-bs-toggle="tab" data-bs-target="#content-wallet" type="button" onclick="setMode('wallet')">
+                    <i class="fa-solid fa-wallet me-2"></i> Cartera Spot
+                </button>
+            </li>
+            <li class="nav-item">
                 <button class="nav-link" id="tab-config" data-bs-toggle="tab" data-bs-target="#content-config" type="button" onclick="loadConfigForm()">
                     <i class="fa-solid fa-sliders me-2"></i> Configuración
                 </button>
@@ -199,6 +204,37 @@
                     </div>
                 </div>
 
+            </div>
+
+            <div class="tab-pane fade" id="content-wallet" role="tabpanel">
+                <div class="card border-0 shadow-sm mt-3">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0 fw-bold"><i class="fa-solid fa-coins me-2 text-warning"></i> Balance de Cartera (Spot)</h5>
+                            <button class="btn btn-primary btn-sm" onclick="loadWallet()"><i class="fa-solid fa-rotate me-1"></i> Actualizar</button>
+                        </div>
+                        <small class="text-muted">Mostrando solo activos con valor superior a 1.00 USDC.</small>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Activo</th>
+                                        <th>Disponible (Libre)</th>
+                                        <th>Bloqueado (Órdenes)</th>
+                                        <th>Total</th>
+                                        <th>Valor Aprox. (USDC)</th>
+                                        <th class="text-end">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="wallet-table-body">
+                                    <tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="tab-pane fade" id="content-config" role="tabpanel">
