@@ -10,6 +10,9 @@ let currentTimeframe = '15m';
 let currentConfigObj = null; 
 let fullGlobalHistory = []; 
 
+// CACHE PER OPTIMITZACIÓ (NOVETAT)
+let dataCache = {}; 
+
 // ==========================================
 // 2. FORMATTERS I HELPERS
 // ==========================================
@@ -48,7 +51,12 @@ const fmtPct = (num) => {
 const updateColorValue = (elementId, value, suffix = '') => {
     const el = document.getElementById(elementId);
     if (!el) return;
-    el.innerText = fmtUSDC(value) + suffix;
+    
+    // Optimització visual: Si el text no canvia, no toquem el DOM
+    const newText = fmtUSDC(value) + suffix;
+    if (el.innerText === newText) return;
+
+    el.innerText = newText;
     el.classList.remove('text-success', 'text-danger', 'text-dark');
     if (value >= 0) el.classList.add('text-success');
     else el.classList.add('text-danger');
@@ -61,6 +69,9 @@ const updateColorValue = (elementId, value, suffix = '') => {
 
 function setMode(mode) {
     currentMode = mode;
+    // Netejem cache quan canviem de vista per forçar recàrrega
+    dataCache = {}; 
+    
     if (mode === 'home') loadHome();
     else if (mode !== 'config') loadSymbol(mode);
     
@@ -74,6 +85,7 @@ function setMode(mode) {
 
 function setTimeframe(tf) {
     currentTimeframe = tf;
+    dataCache = {}; // Forçar recàrrega
     document.querySelectorAll('.tf-btn').forEach(btn => { 
         btn.classList.remove('active'); 
         if(btn.innerText.toLowerCase() === tf) btn.classList.add('active'); 
@@ -274,6 +286,12 @@ function renderDonut(domId, data, isCurrency = false) {
     if (!dom) return;
     const chart = echarts.getInstanceByDom(dom) || echarts.init(dom);
     const chartData = (data && data.length > 0) ? data : [{value: 0, name: 'Sin Datos'}];
+    
+    // OPTIMITZACIÓ: Només repintem si les dades són noves
+    const cacheKey = domId + JSON.stringify(chartData);
+    if (dataCache[cacheKey]) return;
+    dataCache[cacheKey] = true;
+
     chart.setOption({ 
         tooltip: { trigger: 'item', formatter: function(params) { const val = isCurrency ? fmtUSDC(params.value) : fmtInt(params.value); return `${params.name}: ${val} (${params.percent}%)`; } }, 
         legend: { orient: 'vertical', left: '0%', top: 'center', itemGap: 10, textStyle: { fontSize: 11, color: '#6b7280' } }, 
@@ -285,6 +303,12 @@ function renderLineChart(domId, data, color) {
     const dom = document.getElementById(domId);
     if (!dom) return;
     if (!data || data.length === 0) return;
+
+    // OPTIMITZACIÓ: Cache simple per longitud de dades
+    // Si la longitud de l'històric és la mateixa, assumim que no ha canviat (per velocitat)
+    const cacheKey = domId + data.length;
+    if (dataCache[cacheKey]) return;
+    dataCache[cacheKey] = true;
 
     let chart = echarts.getInstanceByDom(dom);
     if (!chart) chart = echarts.init(dom);
@@ -340,12 +364,25 @@ async function loadBalanceCharts() {
     } catch(e) { console.error("Error loading charts", e); }
 }
 
-// --- FUNCIÓ DE CANDLES (AMB CORRECCIÓ OVERLAP) ---
+// --- FUNCIÓ DE CANDLES (AMB CACHE + CORRECCIÓ OVERLAP) ---
 function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     const dom = document.getElementById(`chart-${safeSym}`);
     if(!dom) return;
     if (!data || data.length === 0) return;
     
+    // OPTIMITZACIÓ CRÍTICA:
+    // Creem una "firma" única de l'estat actual. Si és idèntica a l'anterior, no redibuixem.
+    // Això estalvia moltíssima CPU al navegador.
+    const currentStateSignature = JSON.stringify({
+        lastCandle: data[data.length-1], // Només mirem l'última espelma
+        orders: activeOrders.length,     // i el número d'ordres
+        grid: gridLines.length
+    });
+    
+    if (dataCache[`sig_${safeSym}`] === currentStateSignature) return;
+    dataCache[`sig_${safeSym}`] = currentStateSignature;
+    // ----------------------
+
     let chart = echarts.getInstanceByDom(dom);
     if (!chart) chart = echarts.init(dom);
 
@@ -542,7 +579,6 @@ async function loadHome() {
         renderDonut('sessionTradesChart', data.session_trades_distribution, false);
         renderDonut('globalTradesChart', data.global_trades_distribution, false);
         
-        // Recuperada la crida a la funció
         loadBalanceCharts();
 
         const strategiesBody = document.getElementById('strategies-table-body');
@@ -640,6 +676,11 @@ async function loadGlobalOrders() {
             return;
         }
 
+        // OPTIMITZACIÓ:
+        const cacheKey = 'global_orders_' + JSON.stringify(orders);
+        if (dataCache[cacheKey]) return;
+        dataCache[cacheKey] = true;
+
         orders.sort((a, b) => a.symbol.localeCompare(b.symbol) || b.price - a.price);
 
         tbody.innerHTML = orders.map(o => {
@@ -696,6 +737,8 @@ async function closeOrder(symbol, id, side, amount) {
         const data = await res.json();
         if (res.ok) {
             alert(data.message);
+            // Invalidate cache
+            dataCache = {};
             loadGlobalOrders(); 
             loadHome(); 
         } else {
@@ -723,6 +766,7 @@ async function toggleEngine() {
         const data = await res.json();
         if (res.ok) {
             alert(data.message);
+            dataCache = {};
             loadHome();
         } else {
             alert("Error: " + data.message);

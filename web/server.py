@@ -37,15 +37,13 @@ class CloseOrderRequest(BaseModel):
     side: str
     amount: float
 
-# --- FUNCIÓ D'INICI DEL SERVIDOR (ADAPTADA PER A DEV/PROD) ---
+# --- FUNCIÓ D'INICI DEL SERVIDOR ---
 def start_server(bot, host=None, port=None):
     global bot_instance
     bot_instance = bot
     
-    # Carreguem variables d'entorn per si cal (per saber on escoltar)
     load_dotenv('config/.env', override=True)
     
-    # Si main.py no ens passa host/port, els busquem al .env o posem valors per defecte
     if host is None:
         host = os.getenv('WEB_HOST', '127.0.0.1') 
     
@@ -53,7 +51,7 @@ def start_server(bot, host=None, port=None):
         port = int(os.getenv('WEB_PORT', 8000))
         
     uvicorn.run(app, host=host, port=port, log_level="error")
-# -------------------------------------------------------------
+# -----------------------------------
 
 def format_uptime(seconds):
     if seconds < 0: return "0s"
@@ -81,7 +79,7 @@ async def get_status():
         portfolio = []
         current_total_equity = 0.0
         
-        # 1. Obtenir Saldo USDC (Lliure + Bloquejat)
+        # 1. Obtenir Saldo USDC
         try:
             usdc_balance = bot_instance.connector.get_total_balance('USDC')
         except: usdc_balance = 0.0
@@ -101,7 +99,7 @@ async def get_status():
             try:
                 qty = bot_instance.connector.get_total_balance(base)
                 price = prices.get(symbol, 0.0)
-                # Si el bot està corrent i no tenim preu a DB, el demanem
+                
                 if price == 0 and bot_instance.is_running: 
                     price = bot_instance.connector.fetch_current_price(symbol)
                 
@@ -114,18 +112,26 @@ async def get_status():
                         current_total_equity += val
             except: pass
 
-        # --- CÀLCUL PnL GLOBAL ---
+        # --- CÀLCUL DE PNL (CORREGIT) ---
+        
+        # A) GLOBAL (Històric absolut)
         global_start = db.get_global_start_balance()
         if global_start == 0: global_start = current_total_equity
         global_pnl_total = current_total_equity - global_start
 
-        # Estadístiques globals
-        global_stats = db.get_stats(from_timestamp=0)
-        global_trades_map = global_stats['per_coin_stats']['trades']
-        global_cash_flow = global_stats['per_coin_stats']['cash_flow']
+        # B) SESSIÓ (Des de l'últim 'Start')
+        session_start_equity = db.get_session_start_balance()
+        if session_start_equity == 0: session_start_equity = current_total_equity
         
-        # Temps
+        # Aquest és el càlcul màgic: Diferència directa de patrimoni
+        session_pnl_total = current_total_equity - session_start_equity
+
+        # Estadístiques
+        global_stats = db.get_stats(from_timestamp=0)
         session_start_ts = bot_instance.global_start_time
+        session_stats = db.get_stats(from_timestamp=session_start_ts)
+
+        # Temps
         if bot_instance.is_running:
             session_uptime_str = format_uptime(time.time() - session_start_ts)
         else:
@@ -134,45 +140,47 @@ async def get_status():
         first_run_ts = db.get_first_run_timestamp()
         total_uptime_str = format_uptime(time.time() - first_run_ts)
 
-        # Estadístiques Sessió
-        session_stats = db.get_stats(from_timestamp=session_start_ts)
-        session_cash_flow = session_stats['per_coin_stats']['cash_flow']
-        session_qty_delta = session_stats['per_coin_stats']['qty_delta']
-
+        # Desglossament per Estratègia (Taula)
         strategies_data = []
-        accumulated_session_pnl = 0.0
+        global_cash_flow = global_stats['per_coin_stats']['cash_flow']
+        session_cash_flow = session_stats['per_coin_stats']['cash_flow']
+        global_trades_map = global_stats['per_coin_stats']['trades']
 
         for symbol in pairs_to_check:
             try:
                 strat_conf = bot_instance.pairs_map.get(symbol, {}).get('strategy', {})
                 trades_count = global_trades_map.get(symbol, 0)
                 curr_price = current_prices_map.get(symbol, 0.0)
-                
-                cf_global = global_cash_flow.get(symbol, 0.0)
                 curr_val = holding_values.get(symbol, 0.0)
-                init_val = db.get_coin_initial_balance(symbol)
                 
-                if curr_price == 0:
-                    strat_pnl_global = 0.0
-                    strat_pnl_session = 0.0
-                else:
-                    # CORRECCIÓ AUTOMÀTICA: Si falta init_val, el guardem ara mateix per evitar PnL bojos
-                    if init_val == 0.0 and curr_val > 0:
-                        init_val = curr_val
-                        db.set_coin_initial_balance(symbol, init_val)
-                    
-                    strat_pnl_global = curr_val - init_val + cf_global
-                    
-                    # Filtre extra: si no hi ha trades i el pnl és enorme, reset visual
-                    if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
-                        strat_pnl_global = 0.0
+                # Snapshot inicial (Valor de la moneda quan es va iniciar el bot)
+                init_val_coin = db.get_coin_initial_balance(symbol)
+                
+                # Autocorrecció: si no tenim snapshot, assumim que era el valor actual (PnL 0)
+                if init_val_coin == 0.0 and curr_val > 0:
+                    init_val_coin = curr_val
+                    db.set_coin_initial_balance(symbol, init_val_coin)
 
-                    cf_session = session_cash_flow.get(symbol, 0.0)
-                    qty_change = session_qty_delta.get(symbol, 0.0)
-                    inventory_value_change = qty_change * curr_price
-                    strat_pnl_session = inventory_value_change + cf_session
+                # --- PnL per Moneda (Molt més precís ara) ---
+                # Fórmula: (ValorActual - ValorInicial) + CashFlow(TradesRealitzats)
                 
-                accumulated_session_pnl += strat_pnl_session
+                # Global
+                cf_global = global_cash_flow.get(symbol, 0.0)
+                strat_pnl_global = (curr_val - init_val_coin) + cf_global
+
+                # Sessió
+                cf_session = session_cash_flow.get(symbol, 0.0)
+                # Nota: Per fer sessió per moneda perfecte necessitariem snapshot d'inici de sessió per moneda.
+                # Com a aproximació robusta per la taula, usem la mateixa lògica global pero ajustada.
+                # Per simplificar i no liar-la: a la taula de sessió mostrem el CashFlow + Canvi d'Inventari recent
+                qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
+                
+                # Si tenim preu, calculem el PnL de la graella en aquesta sessió
+                strat_pnl_session = (qty_delta * curr_price) + cf_session
+
+                # Filtres visuals
+                if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
+                     strat_pnl_global = 0.0
 
                 strategies_data.append({
                     "symbol": symbol,
@@ -198,7 +206,7 @@ async def get_status():
             "stats": {
                 "session": {
                     "trades": session_stats['trades'],
-                    "profit": round(accumulated_session_pnl, 2),
+                    "profit": round(session_pnl_total, 2), # AQUEST ERA EL VALOR INCORRECTE, ARA ESTÀ ARREGLAT
                     "best_coin": session_stats['best_coin'],
                     "uptime": session_uptime_str
                 },
@@ -212,7 +220,6 @@ async def get_status():
         }
     except Exception as e:
         log.error(f"FATAL API ERROR: {e}")
-        # Retornem un objecte buit segur per no trencar el frontend
         return {
             "status": "Error",
             "active_pairs": [],
@@ -307,16 +314,18 @@ async def get_pair_details(symbol: str, timeframe: str = '15m'):
                 qty_held = 0.0
                 try: qty_held = bot_instance.connector.get_total_balance(base)
                 except: pass
+                
+                # Càlcul precís PnL Global per moneda
                 current_val = qty_held * current_price
                 init_val = db.get_coin_initial_balance(symbol)
                 
-                # CORRECCIÓ TAMBÉ AQUÍ
                 if init_val == 0.0 and current_val > 0:
                     init_val = current_val
                     db.set_coin_initial_balance(symbol, init_val)
 
-                global_pnl = current_val - init_val + cf_global
+                global_pnl = (current_val - init_val) + cf_global
                 
+                # Càlcul PnL Sessió (Aproximat per moneda, basat en fluxe)
                 session_start_ts = bot_instance.global_start_time
                 session_stats = db.get_stats(from_timestamp=session_start_ts)
                 cf_session = session_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)

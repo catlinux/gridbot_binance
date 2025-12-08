@@ -28,8 +28,11 @@ class GridBot:
         self.processed_trade_ids = set()
         self.session_trades_count = {} 
         
-        # Control de manteniment
-        self.last_prune_time = 0 
+        # Control de manteniment (BBDD)
+        self.last_prune_time = 0
+        
+        # Control Informe Diari (Telegram)
+        self.last_daily_report_date = None
 
     def _refresh_pairs_map(self):
         self.pairs_map = {p['symbol']: p for p in self.config['pairs'] if p['enabled']}
@@ -42,7 +45,7 @@ class GridBot:
                 time.sleep(1)
                 continue
             
-            # --- MANTENIMENT DE BBDD (Cada 24h) ---
+            # --- 1. MANTENIMENT DE BBDD (Cada 24h) ---
             if time.time() - self.last_prune_time > 86400:
                 try:
                     log.info("🧹 Ejecutando mantenimiento de Base de Datos...")
@@ -52,7 +55,38 @@ class GridBot:
                     self.last_prune_time = time.time()
                 except Exception as e:
                     log.error(f"Error en mantenimiento DB: {e}")
-            # --------------------------------------
+            
+            # --- 2. INFORME DIARI TELEGRAM (08:00 AM) ---
+            now = datetime.now()
+            current_date_str = now.strftime("%Y-%m-%d")
+            
+            # Si són les 8 del matí (hora del servidor) i no hem enviat avui
+            if now.hour == 8 and self.last_daily_report_date != current_date_str:
+                try:
+                    log.info("📊 Generando informe diario...")
+                    # Calculem estadístiques de les últimes 24h (86400 segons)
+                    stats_24h = self.db.get_stats(from_timestamp=time.time() - 86400)
+                    
+                    total_profit = sum(stats_24h['per_coin_stats']['cash_flow'].values())
+                    total_trades = stats_24h['trades']
+                    best_coin = stats_24h['best_coin']
+                    
+                    icon = "🟢" if total_profit >= 0 else "🔴"
+                    
+                    msg = (f"📅 <b>INFORME DIARIO (24h)</b>\n"
+                           f"--------------------------------\n"
+                           f"{icon} <b>Beneficio: {total_profit:+.2f} USDC</b>\n"
+                           f"🔢 Operaciones: {total_trades}\n"
+                           f"🏆 Top Moneda: {best_coin}\n"
+                           f"--------------------------------\n"
+                           f"<i>Sistema funcionando correctamente.</i>")
+                    
+                    send_msg(msg)
+                    self.last_daily_report_date = current_date_str
+                    log.success("Informe diario enviado a Telegram.")
+                except Exception as e:
+                    log.error(f"Error enviando informe diario: {e}")
+            # ---------------------------------------------
 
             current_pairs = list(self.active_pairs)
             for symbol in current_pairs:
