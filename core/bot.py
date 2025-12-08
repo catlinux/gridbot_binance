@@ -28,10 +28,10 @@ class GridBot:
         self.processed_trade_ids = set()
         self.session_trades_count = {} 
         
-        # Control de manteniment (BBDD)
+        # Control de manteniment
         self.last_prune_time = 0
         
-        # Control Informe Diari (Telegram)
+        # Control Informe Diari
         self.last_daily_report_date = None
 
     def _refresh_pairs_map(self):
@@ -60,19 +60,15 @@ class GridBot:
             now = datetime.now()
             current_date_str = now.strftime("%Y-%m-%d")
             
-            # Si són les 8 del matí (hora del servidor) i no hem enviat avui
             if now.hour == 8 and self.last_daily_report_date != current_date_str:
                 try:
                     log.info("📊 Generando informe diario...")
-                    # Calculem estadístiques de les últimes 24h (86400 segons)
                     stats_24h = self.db.get_stats(from_timestamp=time.time() - 86400)
-                    
                     total_profit = sum(stats_24h['per_coin_stats']['cash_flow'].values())
                     total_trades = stats_24h['trades']
                     best_coin = stats_24h['best_coin']
                     
                     icon = "🟢" if total_profit >= 0 else "🔴"
-                    
                     msg = (f"📅 <b>INFORME DIARIO (24h)</b>\n"
                            f"--------------------------------\n"
                            f"{icon} <b>Beneficio: {total_profit:+.2f} USDC</b>\n"
@@ -86,7 +82,6 @@ class GridBot:
                     log.success("Informe diario enviado a Telegram.")
                 except Exception as e:
                     log.error(f"Error enviando informe diario: {e}")
-            # ---------------------------------------------
 
             current_pairs = list(self.active_pairs)
             for symbol in current_pairs:
@@ -148,12 +143,15 @@ class GridBot:
             msg = ""
             
             if side == 'BUY':
+                # --- ASSIGNAR ID ---
+                new_buy_id = self.db.get_next_buy_id()
+                self.db.set_trade_buy_id(tid, new_buy_id)
+                # -------------------
+
                 if self.session_trades_count[symbol] == 1:
-                    # TRADUCCIÓ: Entrada inicial
-                    header = "🚀 🟢 <b>ENTRADA AL MERCADO (INICIAL)</b>"
+                    header = f"🚀 🟢 <b>ENTRADA (ID #{new_buy_id})</b>"
                 else:
-                    # TRADUCCIÓ: Compra normal
-                    header = "🟢 <b>COMPRA (GRID)</b>"
+                    header = f"🟢 <b>COMPRA (ID #{new_buy_id})</b>"
                 
                 msg = (f"{header}\n"
                        f"Par: <b>{symbol}</b>\n"
@@ -162,7 +160,11 @@ class GridBot:
                        f"Coste Total: {cost:.2f} USDC")
             
             else:
-                # --- CÀLCUL DE BENEFICIS ---
+                # --- BUSCAR ID ORIGINAL ---
+                linked_id = self.db.find_linked_buy_id(symbol, price, spread_pct)
+                id_text = f"#{linked_id}" if linked_id else "?"
+                # --------------------------
+
                 buy_price_ref = price / (1 + (spread_pct / 100))
                 gross_profit = (price - buy_price_ref) * amount
                 
@@ -177,8 +179,7 @@ class GridBot:
                 else:
                     percent_profit = 0.0
                 
-                # TRADUCCIÓ: Venda
-                msg = (f"🔴 <b>VENTA (TOMA DE BENEFICIOS)</b>\n"
+                msg = (f"🔴 <b>VENTA (Cierra ID {id_text})</b>\n"
                        f"Par: <b>{symbol}</b>\n"
                        f"Precio Venta: {price:.4f}\n"
                        f"Total Recibido: {cost:.2f} USDC\n"
@@ -242,7 +243,6 @@ class GridBot:
                 buy_order = self.connector.place_market_buy(symbol, amount_buy_usdc)
                 if buy_order:
                     log.success(f"✅ Compra inicial ejecutada para {symbol}.")
-                    # (L'avís l'envia _check_and_alert_trades)
                     time.sleep(2) 
                     return 
             else:
@@ -264,6 +264,17 @@ class GridBot:
             if level_price > current_price + margin: target_side = 'sell'
             elif level_price < current_price - margin: target_side = 'buy'
             else: continue 
+
+            # --- CORRECCIÓ ERROR "COMPRA/VENDA AL MATEIX NIVELL" ---
+            if target_side == 'sell':
+                last_buy_price = self.db.get_last_buy_price(symbol)
+                # Si intentem vendre a un preu que és igual (o gairebé) a l'última compra, BLOQUEJEM.
+                # Exigim que la venda sigui almenys un 50% del spread superior a l'última compra.
+                min_sell_price = last_buy_price * (1 + (spread_val * 0.5))
+                if level_price < min_sell_price:
+                    # Saltem aquesta iteració, no posem l'ordre
+                    continue
+            # -------------------------------------------------------
 
             exists = False
             for o in open_orders:

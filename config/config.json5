@@ -61,7 +61,7 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 12,
-        "grid_spread": 1
+        "grid_spread": 0.8
       }
     },
     {
@@ -70,7 +70,7 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 12,
-        "grid_spread": 1
+        "grid_spread": 0.8
       }
     }
   ]

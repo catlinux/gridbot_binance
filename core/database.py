@@ -21,6 +21,7 @@ class BotDatabase:
         cursor.execute('''CREATE TABLE IF NOT EXISTS market_data (symbol TEXT PRIMARY KEY, price REAL, candles_json TEXT, updated_at REAL)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS grid_status (symbol TEXT PRIMARY KEY, open_orders_json TEXT, grid_levels_json TEXT, updated_at REAL)''')
         
+        # Intentem afegir la columna buy_id si ja existeix la taula (per compatibilitat)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS trade_history (
                 id TEXT PRIMARY KEY,
@@ -35,7 +36,11 @@ class BotDatabase:
             )
         ''')
         
-        # NOVA TAULA: Històric de Balanços
+        try:
+            cursor.execute("ALTER TABLE trade_history ADD COLUMN buy_id INTEGER")
+        except: 
+            pass # Ja existeix
+        
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS balance_history (
                 timestamp REAL PRIMARY KEY,
@@ -45,6 +50,11 @@ class BotDatabase:
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS bot_info (key TEXT PRIMARY KEY, value TEXT)''')
         
+        # Inicialitzar comptador IDs si no existeix
+        cursor.execute("SELECT value FROM bot_info WHERE key='next_buy_id'")
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('next_buy_id', '1'))
+            
         cursor.execute("SELECT value FROM bot_info WHERE key='first_run'")
         if not cursor.fetchone():
             cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', str(time.time())))
@@ -52,11 +62,69 @@ class BotDatabase:
         conn.commit()
         conn.close()
 
-    # --- GESTIÓ D'HISTÒRIC DE BALANÇ (NOU) ---
+    # --- GESTIÓ IDs CÍCLICS (NOU) ---
+    def get_next_buy_id(self):
+        """Retorna el següent ID (1-500) i incrementa el comptador"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT value FROM bot_info WHERE key='next_buy_id'")
+        row = cursor.fetchone()
+        current_id = int(row[0]) if row else 1
+        
+        # Retornem l'ID actual
+        assigned_id = current_id
+        
+        # Calculem el següent (reset a 500)
+        next_id = current_id + 1
+        if next_id > 500: next_id = 1
+        
+        cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('next_buy_id', str(next_id)))
+        conn.commit()
+        conn.close()
+        return assigned_id
+
+    def set_trade_buy_id(self, trade_id, buy_id):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE trade_history SET buy_id = ? WHERE id = ?", (buy_id, trade_id))
+        conn.commit()
+        conn.close()
+
+    def get_last_buy_price(self, symbol):
+        """Retorna el preu de l'última compra registrada per evitar wash-trading"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT price FROM trade_history WHERE symbol=? AND side='buy' ORDER BY timestamp DESC LIMIT 1", (symbol,))
+        row = cursor.fetchone()
+        conn.close()
+        return float(row[0]) if row else 0.0
+
+    def find_linked_buy_id(self, symbol, sell_price, spread_pct):
+        """Intenta trobar l'ID de la compra que correspon a aquesta venda"""
+        # La lògica és: La compra ha d'estar a un preu aprox = SellPrice / (1 + Spread)
+        # Busquem la compra més recent que encaixi amb aquest preu aprox (marge d'error petit)
+        target_buy_price = sell_price / (1 + (spread_pct / 100))
+        min_p = target_buy_price * 0.99
+        max_p = target_buy_price * 1.01
+        
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT buy_id FROM trade_history 
+            WHERE symbol=? AND side='buy' AND price >= ? AND price <= ? 
+            ORDER BY timestamp DESC LIMIT 1
+        ''', (symbol, min_p, max_p))
+        row = cursor.fetchone()
+        conn.close()
+        
+        return row[0] if row else None
+
+    # --- RESTA DE FUNCIONS ---
+    
     def log_balance_snapshot(self, equity):
         conn = self._get_conn()
         cursor = conn.cursor()
-        # Guardem timestamp actual i valor total
         cursor.execute("INSERT INTO balance_history (timestamp, equity) VALUES (?, ?)", (time.time(), equity))
         conn.commit()
         conn.close()
@@ -69,7 +137,6 @@ class BotDatabase:
         conn.close()
         return rows
 
-    # --- GESTIÓ DE SALDOS ---
     def set_session_start_balance(self, value):
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -104,7 +171,6 @@ class BotDatabase:
         if row: return float(row[0])
         return 0.0
 
-    # --- SNAPSHOTS PER MONEDA ---
     def set_coin_initial_balance(self, symbol, value_usdc):
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -138,8 +204,6 @@ class BotDatabase:
         cursor.execute("DELETE FROM bot_info WHERE key='coins_initial_equity'")
         conn.commit()
         conn.close()
-    
-    # -----------------------------------------
 
     def update_market_snapshot(self, symbol, price, candles):
         conn = self._get_conn()
@@ -177,6 +241,7 @@ class BotDatabase:
                     else:
                         fee_in_quote = fee_cost * t['price']
 
+                # L'insert ignora si ja existeix, així que no sobreescriu el buy_id si ja està posat
                 cursor.execute('''
                     INSERT OR IGNORE INTO trade_history (id, symbol, side, price, amount, cost, fee_cost, fee_currency, timestamp)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -294,33 +359,29 @@ class BotDatabase:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM trade_history")
         cursor.execute("DELETE FROM market_data")
-        # AFEGIT: Netejar històric de balanços també
         cursor.execute("DELETE FROM balance_history")
+        # Reiniciem també el comptador d'IDs
         now = str(time.time())
-        cursor.execute("DELETE FROM bot_info WHERE key IN ('first_run', 'global_start_balance', 'session_start_balance', 'coins_initial_equity')")
+        cursor.execute("DELETE FROM bot_info WHERE key IN ('first_run', 'global_start_balance', 'session_start_balance', 'coins_initial_equity', 'next_buy_id')")
         cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', now))
+        cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('next_buy_id', '1'))
         conn.commit()
         conn.close()
         return True
 
     def prune_old_data(self, days_keep=30):
-        """Esborra dades de fa més de X dies"""
         cutoff = time.time() - (days_keep * 24 * 3600)
-        # Els trades en binance van en mil·lisegons, els logs propis en segons
         cutoff_ms = cutoff * 1000
         
         conn = self._get_conn()
         cursor = conn.cursor()
         
-        # 1. Esborrar Trades Antics
         cursor.execute("DELETE FROM trade_history WHERE timestamp < ?", (cutoff_ms,))
         deleted_trades = cursor.rowcount
         
-        # 2. Esborrar Historial de Balanç Antic
         cursor.execute("DELETE FROM balance_history WHERE timestamp < ?", (cutoff,))
         deleted_balance = cursor.rowcount
         
-        # 3. Compactar la DB si hem esborrat molt
         if deleted_trades > 0 or deleted_balance > 0:
             cursor.execute("VACUUM")
 

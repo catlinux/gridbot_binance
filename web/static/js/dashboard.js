@@ -10,7 +10,7 @@ let currentTimeframe = '15m';
 let currentConfigObj = null; 
 let fullGlobalHistory = []; 
 
-// CACHE PER OPTIMITZACIÓ (NOVETAT)
+// CACHE PER OPTIMITZACIÓ
 let dataCache = {}; 
 
 // ==========================================
@@ -52,7 +52,6 @@ const updateColorValue = (elementId, value, suffix = '') => {
     const el = document.getElementById(elementId);
     if (!el) return;
     
-    // Optimització visual: Si el text no canvia, no toquem el DOM
     const newText = fmtUSDC(value) + suffix;
     if (el.innerText === newText) return;
 
@@ -69,7 +68,6 @@ const updateColorValue = (elementId, value, suffix = '') => {
 
 function setMode(mode) {
     currentMode = mode;
-    // Netejem cache quan canviem de vista per forçar recàrrega
     dataCache = {}; 
     
     if (mode === 'home') loadHome();
@@ -85,7 +83,7 @@ function setMode(mode) {
 
 function setTimeframe(tf) {
     currentTimeframe = tf;
-    dataCache = {}; // Forçar recàrrega
+    dataCache = {}; 
     document.querySelectorAll('.tf-btn').forEach(btn => { 
         btn.classList.remove('active'); 
         if(btn.innerText.toLowerCase() === tf) btn.classList.add('active'); 
@@ -152,7 +150,7 @@ function ensureTabExists(symbol) {
         </div>
         <div class="row">
             <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Órdenes Activas</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-striped mb-0"><thead class="table-light"><tr><th>Tipo</th><th>Precio</th><th>Volumen</th></tr></thead><tbody id="orders-${safe}"></tbody></table></div></div></div>
-            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Histórico de Operaciones</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div></div></div>
+            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Histórico de Operaciones</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>ID</th><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div></div></div>
         </div>`;
     tabContent.appendChild(div);
 }
@@ -287,7 +285,6 @@ function renderDonut(domId, data, isCurrency = false) {
     const chart = echarts.getInstanceByDom(dom) || echarts.init(dom);
     const chartData = (data && data.length > 0) ? data : [{value: 0, name: 'Sin Datos'}];
     
-    // OPTIMITZACIÓ: Només repintem si les dades són noves
     const cacheKey = domId + JSON.stringify(chartData);
     if (dataCache[cacheKey]) return;
     dataCache[cacheKey] = true;
@@ -304,8 +301,6 @@ function renderLineChart(domId, data, color) {
     if (!dom) return;
     if (!data || data.length === 0) return;
 
-    // OPTIMITZACIÓ: Cache simple per longitud de dades
-    // Si la longitud de l'històric és la mateixa, assumim que no ha canviat (per velocitat)
     const cacheKey = domId + data.length;
     if (dataCache[cacheKey]) return;
     dataCache[cacheKey] = true;
@@ -352,7 +347,6 @@ function renderLineChart(domId, data, color) {
     chart.setOption(option);
 }
 
-// --- FUNCIÓ RESTAURADA ---
 async function loadBalanceCharts() {
     try {
         const res = await fetch('/api/history/balance');
@@ -364,32 +358,24 @@ async function loadBalanceCharts() {
     } catch(e) { console.error("Error loading charts", e); }
 }
 
-// --- FUNCIÓ DE CANDLES (AMB CACHE + CORRECCIÓ OVERLAP) ---
 function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
     const dom = document.getElementById(`chart-${safeSym}`);
     if(!dom) return;
     if (!data || data.length === 0) return;
     
-    // OPTIMITZACIÓ CRÍTICA:
-    // Creem una "firma" única de l'estat actual. Si és idèntica a l'anterior, no redibuixem.
-    // Això estalvia moltíssima CPU al navegador.
     const currentStateSignature = JSON.stringify({
-        lastCandle: data[data.length-1], // Només mirem l'última espelma
-        orders: activeOrders.length,     // i el número d'ordres
+        lastCandle: data[data.length-1], 
+        orders: activeOrders.length,     
         grid: gridLines.length
     });
     
     if (dataCache[`sig_${safeSym}`] === currentStateSignature) return;
     dataCache[`sig_${safeSym}`] = currentStateSignature;
-    // ----------------------
 
     let chart = echarts.getInstanceByDom(dom);
     if (!chart) chart = echarts.init(dom);
 
-    // 1. Dades Preu Tancament
     const priceData = data.map(i => [i[0], parseFloat(i[2])]); 
-    
-    // 2. CÀLCUL MANUAL DE LÍMITS DE L'EIX Y
     let allPrices = [];
     
     data.forEach(candle => {
@@ -646,7 +632,12 @@ async function loadSymbol(symbol) {
         
         const allOrders = [...sells.reverse(), ...buys];
         document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase() === 'BUY' ? 'COMPRA' : 'VENTA'}</b></td><td>${fmtPrice(o.price)}</td><td>${fmtCrypto(o.amount)}</td></tr>`).join('');
-        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side === 'buy' ? 'COMPRA' : 'VENTA'}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`).join('');
+        
+        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => {
+            const idBadge = t.buy_id ? `<span class="badge bg-secondary">#${t.buy_id}</span>` : '<span class="text-muted small">-</span>';
+            return `<tr><td>${idBadge}</td><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side === 'buy' ? 'COMPRA' : 'VENTA'}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`;
+        }).join('');
+        
     } catch(e) { console.error(e); }
 }
 
@@ -676,7 +667,6 @@ async function loadGlobalOrders() {
             return;
         }
 
-        // OPTIMITZACIÓ:
         const cacheKey = 'global_orders_' + JSON.stringify(orders);
         if (dataCache[cacheKey]) return;
         dataCache[cacheKey] = true;
@@ -737,7 +727,6 @@ async function closeOrder(symbol, id, side, amount) {
         const data = await res.json();
         if (res.ok) {
             alert(data.message);
-            // Invalidate cache
             dataCache = {};
             loadGlobalOrders(); 
             loadHome(); 
@@ -781,7 +770,11 @@ async function resetStatistics() {
     try {
         const res = await fetch('/api/reset_stats', { method: 'POST' });
         const data = await res.json();
-        if (res.ok) { alert(data.message); location.reload(); } else { alert("Error: " + data.detail); }
+        if (res.ok) { 
+            alert(data.message); 
+            dataCache = {}; // Cache clear
+            location.reload(); 
+        } else { alert("Error: " + data.detail); }
     } catch (e) { alert("Error de conexión."); }
 }
 
@@ -790,7 +783,11 @@ async function panicStop() {
     try {
         const res = await fetch('/api/panic/stop', { method: 'POST' });
         const data = await res.json();
-        if (res.ok) { alert(data.message); loadHome(); } else { alert("Error: " + data.detail); }
+        if (res.ok) { 
+            alert(data.message); 
+            dataCache = {}; // Cache clear
+            loadHome(); 
+        } else { alert("Error: " + data.detail); }
     } catch (e) { alert("Error de conexión."); }
 }
 
@@ -798,7 +795,11 @@ async function panicStart() {
     try {
         const res = await fetch('/api/panic/start', { method: 'POST' });
         const data = await res.json();
-        if (res.ok) { alert(data.message); loadHome(); } else { alert("Error: " + data.detail); }
+        if (res.ok) { 
+            alert(data.message); 
+            dataCache = {}; // Cache clear
+            loadHome(); 
+        } else { alert("Error: " + data.detail); }
     } catch (e) { alert("Error de conexión."); }
 }
 
@@ -807,7 +808,11 @@ async function panicCancel() {
     try {
         const res = await fetch('/api/panic/cancel_all', { method: 'POST' });
         const data = await res.json();
-        if (res.ok) { alert(data.message); loadHome(); } else { alert("Error: " + data.detail); }
+        if (res.ok) { 
+            alert(data.message); 
+            dataCache = {}; // Cache clear
+            loadHome(); 
+        } else { alert("Error: " + data.detail); }
     } catch (e) { alert("Error de conexión."); }
 }
 
@@ -816,7 +821,11 @@ async function panicSell() {
     try {
         const res = await fetch('/api/panic/sell_all', { method: 'POST' });
         const data = await res.json();
-        if (res.ok) { alert(data.message); loadHome(); } else { alert("Error: " + data.detail); }
+        if (res.ok) { 
+            alert(data.message); 
+            dataCache = {}; // Cache clear
+            loadHome(); 
+        } else { alert("Error: " + data.detail); }
     } catch (e) { alert("Error de conexión."); }
 }
 
