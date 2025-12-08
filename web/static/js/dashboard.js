@@ -759,6 +759,10 @@ async function loadWallet() {
             const asset = item.asset;
             const isUSDC = asset === 'USDC' || asset === 'USDT';
             
+            // Càlcul de valors en USDC
+            const freeVal = item.free * item.price;
+            const lockedVal = item.locked * item.price;
+            
             // Botó de liquidació (Vendre)
             let actionBtn = '';
             if (!isUSDC) {
@@ -777,8 +781,8 @@ async function loadWallet() {
             return `
                 <tr>
                     <td class="fw-bold">${asset}</td>
-                    <td>${fmtCrypto(item.free)}</td>
-                    <td class="${lockedClass}">${fmtCrypto(item.locked)}</td>
+                    <td>${fmtCrypto(item.free)} <span class="text-muted small">(${fmtUSDC(freeVal)} $)</span></td>
+                    <td class="${lockedClass}">${fmtCrypto(item.locked)} <span class="text-muted small">(${fmtUSDC(lockedVal)} $)</span></td>
                     <td>${fmtCrypto(item.total)}</td>
                     <td class="fw-bold">${fmtUSDC(item.usdc_value)} $</td>
                     <td class="text-end">${actionBtn}</td>
