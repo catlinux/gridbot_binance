@@ -40,6 +40,9 @@ class CloseOrderRequest(BaseModel):
 class LiquidateRequest(BaseModel):
     asset: str
 
+class ClearHistoryRequest(BaseModel):
+    symbol: str
+
 # --- FUNCIÓ D'INICI DEL SERVIDOR ---
 def start_server(bot, host=None, port=None):
     global bot_instance
@@ -156,6 +159,8 @@ async def get_status():
 
                 cf_session = session_cash_flow.get(symbol, 0.0)
                 qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
+                
+                # --- CORRECCIÓ DE L'ERROR ---
                 strat_pnl_session = (qty_delta * curr_price) + cf_session
 
                 if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
@@ -271,16 +276,11 @@ async def get_wallet_data():
         return []
     
     try:
-        # Obtenim balanç complet (total, free, used)
         balances = bot_instance.connector.exchange.fetch_balance()
         if not balances: return []
         
-        # Obtenim preus actuals de tot el mercat (més eficient que un per un)
         tickers = bot_instance.connector.exchange.fetch_tickers()
-        
         wallet_list = []
-        
-        # Iterem sobre els actius que tenim (ignorant els que son 0)
         items = balances.get('total', {}).items()
         
         for asset, total_qty in items:
@@ -293,17 +293,14 @@ async def get_wallet_data():
                 usdc_value = total_qty
                 price = 1.0
             elif asset == 'USDT':
-                # Cas especial stablecoin
                 usdc_value = total_qty
                 price = 1.0
             else:
-                # Busquem parell amb USDC
                 symbol = f"{asset}/USDC"
                 if symbol in tickers:
                     price = float(tickers[symbol]['last'])
                     usdc_value = total_qty * price
             
-            # FILTRE: Només mostrem si val més d'1 USDC
             if usdc_value >= 1.0:
                 free_qty = balances.get(asset, {}).get('free', 0.0)
                 used_qty = balances.get(asset, {}).get('used', 0.0)
@@ -317,7 +314,6 @@ async def get_wallet_data():
                     "price": price
                 })
         
-        # Ordenem per valor de major a menor
         wallet_list.sort(key=lambda x: x['usdc_value'], reverse=True)
         return wallet_list
         
@@ -337,23 +333,14 @@ async def liquidate_asset_api(req: LiquidateRequest):
     symbol = f"{asset}/USDC"
     
     try:
-        # 1. Cancel·lar ordres existents per alliberar saldo
         log.warning(f"LIQUIDACIÓN MANUAL: Cancelando órdenes de {symbol}...")
         bot_instance.connector.cancel_all_orders(symbol)
-        time.sleep(1) # Esperem que l'exchange processi
+        time.sleep(1) 
         
-        # 2. Obtenir saldo total disponible ara
         total_balance = bot_instance.connector.get_total_balance(asset)
         
-        # 3. Vendre a mercat
         if total_balance > 0:
             log.warning(f"LIQUIDACIÓN MANUAL: Vendiendo {total_balance} {asset} a mercado...")
-            # Usem place_market_sell que ja tens a exchange.py
-            # Nota: Potser caldrà ajustar la precisió, ho fa exchange.py?
-            # exchange.py: place_market_sell fa create_order('market', 'sell')
-            
-            # Assegurem precisió mínima
-            # Per seguretat, fem la venda a través del connector
             order = bot_instance.connector.place_market_sell(symbol, total_balance)
             
             if order:
@@ -368,6 +355,53 @@ async def liquidate_asset_api(req: LiquidateRequest):
 
     except Exception as e:
         log.error(f"Error liquidando {asset}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- ENDPOINT MODIFICAT: NETEJA INTEL·LIGENT ---
+@app.post("/api/history/clear")
+async def clear_history_api(req: ClearHistoryRequest):
+    symbol = req.symbol
+    keep_ids = []
+    
+    try:
+        # Recuperem configuració per saber el spread
+        with open('config/config.json5', 'r') as f:
+            config = json5.load(f)
+        
+        # Busquem el spread d'aquesta moneda
+        pair_conf = next((p for p in config['pairs'] if p['symbol'] == symbol), None)
+        spread = pair_conf['strategy']['grid_spread'] if pair_conf else 1.0
+        
+        # Obtenim ordres actives (de Binance si es pot, sino de DB)
+        open_orders = []
+        if bot_instance and bot_instance.connector.exchange:
+            try:
+                open_orders = bot_instance.connector.fetch_open_orders(symbol)
+            except: pass
+        
+        if not open_orders:
+            data = db.get_pair_data(symbol)
+            open_orders = data.get('open_orders', [])
+
+        # Identifiquem quins trades hem de protegir
+        active_sells = [o for o in open_orders if o['side'] == 'sell']
+        
+        for o in active_sells:
+            sell_price = float(o['price'])
+            # Busquem l'ID de la compra original a la DB
+            uuid = db.get_buy_trade_uuid_for_sell_order(symbol, sell_price, spread)
+            if uuid:
+                keep_ids.append(uuid)
+                
+    except Exception as e:
+        log.error(f"Error calculant smart clear: {e}")
+        raise HTTPException(status_code=500, detail=f"Error preparant neteja: {e}")
+
+    try:
+        count = db.delete_history_smart(symbol, keep_ids)
+        protected_msg = f" (Protegidos {len(keep_ids)} registros activos)" if keep_ids else ""
+        return {"status": "success", "message": f"Historial limpiado.{protected_msg} Borrados: {count}"}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/close_order")
@@ -450,7 +484,6 @@ async def save_config(config: ConfigUpdate):
         json5.loads(config.content)
         with open('config/config.json5', 'w') as f: f.write(config.content)
         
-        # Forcem actualització immediata al bot
         if bot_instance:
             bot_instance.connector.check_and_reload_config()
             bot_instance.config = bot_instance.connector.config

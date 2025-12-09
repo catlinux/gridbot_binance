@@ -152,7 +152,22 @@ function ensureTabExists(symbol) {
         </div>
         <div class="row">
             <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Órdenes Activas</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-striped mb-0"><thead class="table-light"><tr><th>Tipo</th><th>Precio</th><th>Volumen</th></tr></thead><tbody id="orders-${safe}"></tbody></table></div></div></div>
-            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Histórico de Operaciones</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>ID</th><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div></div></div>
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Histórico de Operaciones</span>
+                        <button class="btn btn-sm btn-outline-secondary" title="Borrar Historial" onclick="clearHistory('${symbol}')">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                    <div class="card-body p-0 table-responsive" style="max-height:300px">
+                        <table class="table table-custom table-hover mb-0">
+                            <thead class="table-light"><tr><th>ID</th><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead>
+                            <tbody id="trades-${safe}"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>`;
     tabContent.appendChild(div);
 }
@@ -189,25 +204,45 @@ async function loadConfigForm() {
         const configTab = document.getElementById('content-config');
         const systemCardBody = configTab.querySelector('.card-body'); 
         
-        if (systemCardBody && !document.getElementById('sys-testnet-container')) {
+        if (systemCardBody && !document.getElementById('sys-controls-container')) {
             const div = document.createElement('div');
-            div.id = 'sys-testnet-container'; 
+            div.id = 'sys-controls-container'; 
             div.className = 'mt-3 p-3 bg-light border rounded';
             div.innerHTML = `
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" role="switch" id="sys-testnet">
-                    <label class="form-check-label fw-bold" for="sys-testnet">
-                        MODO TESTNET (Simulación)
-                    </label>
-                    <div class="form-text">Si desmarcas esta casilla, operarás con DINERO REAL en Binance.</div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" role="switch" id="sys-testnet">
+                            <label class="form-check-label fw-bold" for="sys-testnet">
+                                MODO TESTNET (Simulación)
+                            </label>
+                            <div class="form-text">Si desmarcas esta casilla, operarás con DINERO REAL en Binance.</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="sys-telegram">
+                            <label class="form-check-label fw-bold" for="sys-telegram">
+                                <i class="fa-brands fa-telegram text-primary"></i> ALERTAS TELEGRAM
+                            </label>
+                            <div class="form-text">Activa o desactiva el envío de notificaciones.</div>
+                        </div>
+                    </div>
                 </div>
             `;
             systemCardBody.appendChild(div);
         }
         
+        // Cargar estado Testnet
         if (document.getElementById('sys-testnet')) {
             const isTest = currentConfigObj.system.use_testnet !== undefined ? currentConfigObj.system.use_testnet : true;
             document.getElementById('sys-testnet').checked = isTest;
+        }
+
+        // Cargar estado Telegram
+        if (document.getElementById('sys-telegram')) {
+            const isTg = currentConfigObj.system.telegram_enabled !== undefined ? currentConfigObj.system.telegram_enabled : true;
+            document.getElementById('sys-telegram').checked = isTg;
         }
 
         const container = document.getElementById('coins-config-container');
@@ -241,9 +276,16 @@ async function saveConfigForm() {
     if (!currentConfigObj) return;
     currentConfigObj.system.cycle_delay = parseInt(document.getElementById('sys-cycle').value);
     
+    // Guardar Testnet
     const testnetCheckbox = document.getElementById('sys-testnet');
     if (testnetCheckbox) {
         currentConfigObj.system.use_testnet = testnetCheckbox.checked;
+    }
+
+    // Guardar Telegram
+    const tgCheckbox = document.getElementById('sys-telegram');
+    if (tgCheckbox) {
+        currentConfigObj.system.telegram_enabled = tgCheckbox.checked;
     }
 
     currentConfigObj.pairs.forEach((pair, index) => {
@@ -811,6 +853,30 @@ async function liquidateAsset(asset) {
         if (res.ok) {
             alert(data.message);
             loadWallet(); // Recarreguem la taula
+        } else {
+            alert("Error: " + data.detail);
+        }
+    } catch(e) {
+        alert("Error de conexión");
+    }
+}
+
+// --- FUNCIÓ NOVA: ESBORRAR HISTÒRIC MONEDA ---
+async function clearHistory(symbol) {
+    if (!confirm(`🗑️ ¿Borrar el historial de operaciones de ${symbol}?\n\nEsta acción NO se puede deshacer. Las órdenes activas NO se verán afectadas.`)) return;
+    
+    try {
+        const res = await fetch('/api/history/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol: symbol })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+            alert(data.message);
+            dataCache = {}; // Forçar recàrrega
+            loadSymbol(symbol); // Actualitzar taula
         } else {
             alert("Error: " + data.detail);
         }

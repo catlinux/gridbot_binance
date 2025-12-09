@@ -120,6 +120,14 @@ class GridBot:
 
         for t in trades:
             tid = t['id']
+            side = t['side'].upper()
+            
+            # --- ASSEGURAR ID SEMPRE (Encara que sigui trade antic) ---
+            buy_id_assigned = None
+            if side == 'BUY':
+                 buy_id_assigned = self.db.assign_id_to_trade_if_missing(tid)
+            # ---------------------------------------------------------
+
             if tid in self.processed_trade_ids: continue
             
             if t['timestamp'] < (self.global_start_time * 1000):
@@ -129,7 +137,6 @@ class GridBot:
             self.processed_trade_ids.add(tid)
             self.session_trades_count[symbol] += 1
             
-            side = t['side'].upper()
             price = float(t['price'])
             amount = float(t['amount'])
             cost = float(t['cost'])
@@ -143,15 +150,13 @@ class GridBot:
             msg = ""
             
             if side == 'BUY':
-                # --- ASSIGNAR ID ---
-                new_buy_id = self.db.get_next_buy_id()
-                self.db.set_trade_buy_id(tid, new_buy_id)
-                # -------------------
-
+                # Fem servir l'ID que hem assegurat abans
+                header_id = f"(ID #{buy_id_assigned})" if buy_id_assigned else ""
+                
                 if self.session_trades_count[symbol] == 1:
-                    header = f"🚀 🟢 <b>ENTRADA (ID #{new_buy_id})</b>"
+                    header = f"🚀 🟢 <b>ENTRADA {header_id}</b>"
                 else:
-                    header = f"🟢 <b>COMPRA (ID #{new_buy_id})</b>"
+                    header = f"🟢 <b>COMPRA {header_id}</b>"
                 
                 msg = (f"{header}\n"
                        f"Par: <b>{symbol}</b>\n"
@@ -160,10 +165,8 @@ class GridBot:
                        f"Coste Total: {cost:.2f} USDC")
             
             else:
-                # --- BUSCAR ID ORIGINAL ---
                 linked_id = self.db.find_linked_buy_id(symbol, price, spread_pct)
                 id_text = f"#{linked_id}" if linked_id else "?"
-                # --------------------------
 
                 buy_price_ref = price / (1 + (spread_pct / 100))
                 gross_profit = (price - buy_price_ref) * amount
@@ -265,16 +268,11 @@ class GridBot:
             elif level_price < current_price - margin: target_side = 'buy'
             else: continue 
 
-            # --- CORRECCIÓ ERROR "COMPRA/VENDA AL MATEIX NIVELL" ---
             if target_side == 'sell':
                 last_buy_price = self.db.get_last_buy_price(symbol)
-                # Si intentem vendre a un preu que és igual (o gairebé) a l'última compra, BLOQUEJEM.
-                # Exigim que la venda sigui almenys un 50% del spread superior a l'última compra.
                 min_sell_price = last_buy_price * (1 + (spread_val * 0.5))
                 if level_price < min_sell_price:
-                    # Saltem aquesta iteració, no posem l'ordre
                     continue
-            # -------------------------------------------------------
 
             exists = False
             for o in open_orders:

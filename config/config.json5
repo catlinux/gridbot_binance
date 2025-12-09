@@ -3,6 +3,7 @@
     "cycle_delay": 5,
     "log_level": "INFO",
     "use_testnet": false
+    "telegram_enabled": true
   },
   "default_strategy": {
     "grids_quantity": 10,

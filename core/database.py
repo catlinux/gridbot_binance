@@ -21,7 +21,6 @@ class BotDatabase:
         cursor.execute('''CREATE TABLE IF NOT EXISTS market_data (symbol TEXT PRIMARY KEY, price REAL, candles_json TEXT, updated_at REAL)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS grid_status (symbol TEXT PRIMARY KEY, open_orders_json TEXT, grid_levels_json TEXT, updated_at REAL)''')
         
-        # Intentem afegir la columna buy_id si ja existeix la taula (per compatibilitat)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS trade_history (
                 id TEXT PRIMARY KEY,
@@ -39,7 +38,7 @@ class BotDatabase:
         try:
             cursor.execute("ALTER TABLE trade_history ADD COLUMN buy_id INTEGER")
         except: 
-            pass # Ja existeix
+            pass 
         
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS balance_history (
@@ -50,7 +49,6 @@ class BotDatabase:
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS bot_info (key TEXT PRIMARY KEY, value TEXT)''')
         
-        # Inicialitzar comptador IDs si no existeix
         cursor.execute("SELECT value FROM bot_info WHERE key='next_buy_id'")
         if not cursor.fetchone():
             cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('next_buy_id', '1'))
@@ -62,9 +60,7 @@ class BotDatabase:
         conn.commit()
         conn.close()
 
-    # --- GESTIÓ IDs CÍCLICS (NOU) ---
     def get_next_buy_id(self):
-        """Retorna el següent ID (1-500) i incrementa el comptador"""
         conn = self._get_conn()
         cursor = conn.cursor()
         
@@ -72,10 +68,8 @@ class BotDatabase:
         row = cursor.fetchone()
         current_id = int(row[0]) if row else 1
         
-        # Retornem l'ID actual
         assigned_id = current_id
         
-        # Calculem el següent (reset a 500)
         next_id = current_id + 1
         if next_id > 500: next_id = 1
         
@@ -92,7 +86,6 @@ class BotDatabase:
         conn.close()
 
     def get_last_buy_price(self, symbol):
-        """Retorna el preu de l'última compra registrada per evitar wash-trading"""
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute("SELECT price FROM trade_history WHERE symbol=? AND side='buy' ORDER BY timestamp DESC LIMIT 1", (symbol,))
@@ -101,9 +94,6 @@ class BotDatabase:
         return float(row[0]) if row else 0.0
 
     def find_linked_buy_id(self, symbol, sell_price, spread_pct):
-        """Intenta trobar l'ID de la compra que correspon a aquesta venda"""
-        # La lògica és: La compra ha d'estar a un preu aprox = SellPrice / (1 + Spread)
-        # Busquem la compra més recent que encaixi amb aquest preu aprox (marge d'error petit)
         target_buy_price = sell_price / (1 + (spread_pct / 100))
         min_p = target_buy_price * 0.99
         max_p = target_buy_price * 1.01
@@ -120,8 +110,6 @@ class BotDatabase:
         
         return row[0] if row else None
 
-    # --- RESTA DE FUNCIONS ---
-    
     def log_balance_snapshot(self, equity):
         conn = self._get_conn()
         cursor = conn.cursor()
@@ -241,7 +229,6 @@ class BotDatabase:
                     else:
                         fee_in_quote = fee_cost * t['price']
 
-                # L'insert ignora si ja existeix, així que no sobreescriu el buy_id si ja està posat
                 cursor.execute('''
                     INSERT OR IGNORE INTO trade_history (id, symbol, side, price, amount, cost, fee_cost, fee_currency, timestamp)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -360,7 +347,6 @@ class BotDatabase:
         cursor.execute("DELETE FROM trade_history")
         cursor.execute("DELETE FROM market_data")
         cursor.execute("DELETE FROM balance_history")
-        # Reiniciem també el comptador d'IDs
         now = str(time.time())
         cursor.execute("DELETE FROM bot_info WHERE key IN ('first_run', 'global_start_balance', 'session_start_balance', 'coins_initial_equity', 'next_buy_id')")
         cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', now))
@@ -388,3 +374,59 @@ class BotDatabase:
         conn.commit()
         conn.close()
         return deleted_trades, deleted_balance
+
+    def assign_id_to_trade_if_missing(self, trade_id):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT buy_id FROM trade_history WHERE id=?", (trade_id,))
+        row = cursor.fetchone()
+        
+        if row and row[0] is not None:
+            found_id = row[0]
+            conn.close()
+            return found_id
+            
+        conn.close()
+        
+        new_id = self.get_next_buy_id()
+        self.set_trade_buy_id(trade_id, new_id)
+        return new_id
+
+    # --- NOVES FUNCIONS PER NETEJA INTEL·LIGENT ---
+    
+    def get_buy_trade_uuid_for_sell_order(self, symbol, sell_price, spread_pct):
+        # Calculem el preu aproximat de la compra
+        target = sell_price / (1 + (spread_pct / 100))
+        min_p = target * 0.995 # Marge petit
+        max_p = target * 1.005
+        
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id FROM trade_history 
+            WHERE symbol=? AND side='buy' AND price >= ? AND price <= ? 
+            ORDER BY timestamp DESC LIMIT 1
+        ''', (symbol, min_p, max_p))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def delete_history_smart(self, symbol, keep_uuids):
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        
+        if not keep_uuids:
+            # Si no hi ha res a protegir, esborrem tot per a aquest parell
+            cursor.execute("DELETE FROM trade_history WHERE symbol=?", (symbol,))
+        else:
+            # Esborrem tot excepte els UUIDs protegits
+            placeholders = ','.join(['?'] * len(keep_uuids))
+            sql = f"DELETE FROM trade_history WHERE symbol=? AND id NOT IN ({placeholders})"
+            params = [symbol] + keep_uuids
+            cursor.execute(sql, params)
+            
+        count = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return count

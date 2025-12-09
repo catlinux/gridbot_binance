@@ -2,6 +2,7 @@
 import requests
 import os
 import threading
+import json5
 from dotenv import load_dotenv
 from utils.logger import log
 
@@ -10,10 +11,26 @@ load_dotenv(dotenv_path='config/.env')
 
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+CONFIG_PATH = 'config/config.json5'
+
+def _check_enabled():
+    """Llegeix la configuració per veure si Telegram està activat"""
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, 'r') as f:
+                conf = json5.load(f)
+                return conf.get('system', {}).get('telegram_enabled', True)
+    except:
+        return True # En cas de dubte, activat
+    return True
 
 def _send_request(message):
     """Funció interna que fa la petició HTTP"""
     if not TOKEN or not CHAT_ID:
+        return
+    
+    # Comprovació de configuració
+    if not _check_enabled():
         return
     
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
