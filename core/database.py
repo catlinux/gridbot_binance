@@ -8,15 +8,19 @@ DB_PATH = "bot_data.db"
 
 class BotDatabase:
     def __init__(self):
-        self.conn = None
+        # --- CONNEXIÓ PERSISTENT ---
+        # Ara obrim la connexió al principi i la guardem a self.conn
+        self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self._init_db()
 
-    def _get_conn(self):
-        return sqlite3.connect(DB_PATH, check_same_thread=False)
-
     def _init_db(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        # Utilitzem la connexió persistent
+        cursor = self.conn.cursor()
+        
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL;")
+        except Exception as e:
+            log.warning(f"No s'ha pogut activar WAL: {e}")
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS market_data (symbol TEXT PRIMARY KEY, price REAL, candles_json TEXT, updated_at REAL)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS grid_status (symbol TEXT PRIMARY KEY, open_orders_json TEXT, grid_levels_json TEXT, updated_at REAL)''')
@@ -57,12 +61,11 @@ class BotDatabase:
         if not cursor.fetchone():
             cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', str(time.time())))
 
-        conn.commit()
-        conn.close()
+        self.conn.commit()
+        # Nota: NO tanquem la connexió aquí (ni a cap funció)
 
     def get_next_buy_id(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         
         cursor.execute("SELECT value FROM bot_info WHERE key='next_buy_id'")
         row = cursor.fetchone()
@@ -74,23 +77,18 @@ class BotDatabase:
         if next_id > 500: next_id = 1
         
         cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('next_buy_id', str(next_id)))
-        conn.commit()
-        conn.close()
+        self.conn.commit()
         return assigned_id
 
     def set_trade_buy_id(self, trade_id, buy_id):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("UPDATE trade_history SET buy_id = ? WHERE id = ?", (buy_id, trade_id))
-        conn.commit()
-        conn.close()
+        self.conn.commit()
 
     def get_last_buy_price(self, symbol):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT price FROM trade_history WHERE symbol=? AND side='buy' ORDER BY timestamp DESC LIMIT 1", (symbol,))
         row = cursor.fetchone()
-        conn.close()
         return float(row[0]) if row else 0.0
 
     def find_linked_buy_id(self, symbol, sell_price, spread_pct):
@@ -98,70 +96,54 @@ class BotDatabase:
         min_p = target_buy_price * 0.99
         max_p = target_buy_price * 1.01
         
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute('''
             SELECT buy_id FROM trade_history 
             WHERE symbol=? AND side='buy' AND price >= ? AND price <= ? 
             ORDER BY timestamp DESC LIMIT 1
         ''', (symbol, min_p, max_p))
         row = cursor.fetchone()
-        conn.close()
-        
         return row[0] if row else None
 
     def log_balance_snapshot(self, equity):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("INSERT INTO balance_history (timestamp, equity) VALUES (?, ?)", (time.time(), equity))
-        conn.commit()
-        conn.close()
+        self.conn.commit()
 
     def get_balance_history(self, from_timestamp=0):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT timestamp, equity FROM balance_history WHERE timestamp >= ? ORDER BY timestamp ASC", (from_timestamp,))
         rows = cursor.fetchall()
-        conn.close()
         return rows
 
     def set_session_start_balance(self, value):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('session_start_balance', str(value)))
-        conn.commit()
-        conn.close()
+        self.conn.commit()
 
     def get_session_start_balance(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT value FROM bot_info WHERE key='session_start_balance'")
         row = cursor.fetchone()
-        conn.close()
         if row: return float(row[0])
         return 0.0
 
     def set_global_start_balance_if_not_exists(self, value):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT value FROM bot_info WHERE key='global_start_balance'")
         if not cursor.fetchone():
             cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('global_start_balance', str(value)))
-        conn.commit()
-        conn.close()
+        self.conn.commit()
 
     def get_global_start_balance(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT value FROM bot_info WHERE key='global_start_balance'")
         row = cursor.fetchone()
-        conn.close()
         if row: return float(row[0])
         return 0.0
 
     def set_coin_initial_balance(self, symbol, value_usdc):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT value FROM bot_info WHERE key='coins_initial_equity'")
         row = cursor.fetchone()
         data = {}
@@ -170,15 +152,12 @@ class BotDatabase:
             except: pass
         data[symbol] = value_usdc
         cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('coins_initial_equity', json.dumps(data)))
-        conn.commit()
-        conn.close()
+        self.conn.commit()
 
     def get_coin_initial_balance(self, symbol):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT value FROM bot_info WHERE key='coins_initial_equity'")
         row = cursor.fetchone()
-        conn.close()
         if row:
             try:
                 data = json.loads(row[0])
@@ -187,30 +166,23 @@ class BotDatabase:
         return 0.0
 
     def reset_coin_initial_balances(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("DELETE FROM bot_info WHERE key='coins_initial_equity'")
-        conn.commit()
-        conn.close()
+        self.conn.commit()
 
     def update_market_snapshot(self, symbol, price, candles):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute('''INSERT OR REPLACE INTO market_data (symbol, price, candles_json, updated_at) VALUES (?, ?, ?, ?)''', (symbol, price, json.dumps(candles), time.time()))
-        conn.commit()
-        conn.close()
+        self.conn.commit()
 
     def update_grid_status(self, symbol, orders, levels):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute('''INSERT OR REPLACE INTO grid_status (symbol, open_orders_json, grid_levels_json, updated_at) VALUES (?, ?, ?, ?)''', (symbol, json.dumps(orders), json.dumps(levels), time.time()))
-        conn.commit()
-        conn.close()
+        self.conn.commit()
 
     def save_trades(self, trades):
         if not trades: return
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         for t in trades:
             try:
                 fee_cost = 0.0
@@ -236,20 +208,21 @@ class BotDatabase:
             except Exception as e: 
                 log.error(f"Error guardando trade DB: {e}")
                 pass
-        conn.commit()
-        conn.close()
+        self.conn.commit()
 
     def get_pair_data(self, symbol):
-        conn = self._get_conn()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        # Per a row_factory necessitem un cursor nou o configurar-ho a nivell de connexió
+        # Per seguretat ho fem temporalment aquí o configurem la connexió globalment
+        self.conn.row_factory = sqlite3.Row 
+        cursor = self.conn.cursor()
+        
         cursor.execute("SELECT * FROM market_data WHERE symbol=?", (symbol,))
         market = cursor.fetchone()
         cursor.execute("SELECT * FROM grid_status WHERE symbol=?", (symbol,))
         grid = cursor.fetchone()
         cursor.execute("SELECT * FROM trade_history WHERE symbol=? ORDER BY timestamp DESC LIMIT 50", (symbol,))
         trades = cursor.fetchall()
-        conn.close()
+        
         return {
             "price": market['price'] if market else 0.0,
             "candles": json.loads(market['candles_json']) if market and market['candles_json'] else [],
@@ -259,28 +232,22 @@ class BotDatabase:
         }
 
     def get_all_prices(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT symbol, price FROM market_data")
         rows = cursor.fetchall()
-        conn.close()
         return {r[0]: r[1] for r in rows}
 
     def get_first_run_timestamp(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT value FROM bot_info WHERE key='first_run'")
         row = cursor.fetchone()
-        conn.close()
         if row: return float(row[0])
         return time.time()
 
     def get_stats(self, from_timestamp=0):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT symbol, side, cost, fee_cost, amount FROM trade_history WHERE timestamp >= ?", (int(from_timestamp * 1000),))
         rows = cursor.fetchall()
-        conn.close()
 
         total_trades = len(rows)
         cash_flow_per_coin = {} 
@@ -325,11 +292,9 @@ class BotDatabase:
         }
 
     def get_all_active_orders(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("SELECT symbol, open_orders_json FROM grid_status")
         rows = cursor.fetchall()
-        conn.close()
         all_orders = []
         for symbol, orders_json in rows:
             if not orders_json: continue
@@ -342,8 +307,7 @@ class BotDatabase:
         return all_orders
 
     def reset_all_statistics(self):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute("DELETE FROM trade_history")
         cursor.execute("DELETE FROM market_data")
         cursor.execute("DELETE FROM balance_history")
@@ -351,16 +315,14 @@ class BotDatabase:
         cursor.execute("DELETE FROM bot_info WHERE key IN ('first_run', 'global_start_balance', 'session_start_balance', 'coins_initial_equity', 'next_buy_id')")
         cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', now))
         cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('next_buy_id', '1'))
-        conn.commit()
-        conn.close()
+        self.conn.commit()
         return True
 
     def prune_old_data(self, days_keep=30):
         cutoff = time.time() - (days_keep * 24 * 3600)
         cutoff_ms = cutoff * 1000
         
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         
         cursor.execute("DELETE FROM trade_history WHERE timestamp < ?", (cutoff_ms,))
         deleted_trades = cursor.rowcount
@@ -371,62 +333,48 @@ class BotDatabase:
         if deleted_trades > 0 or deleted_balance > 0:
             cursor.execute("VACUUM")
 
-        conn.commit()
-        conn.close()
+        self.conn.commit()
         return deleted_trades, deleted_balance
 
     def assign_id_to_trade_if_missing(self, trade_id):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         
         cursor.execute("SELECT buy_id FROM trade_history WHERE id=?", (trade_id,))
         row = cursor.fetchone()
         
         if row and row[0] is not None:
             found_id = row[0]
-            conn.close()
             return found_id
             
-        conn.close()
-        
         new_id = self.get_next_buy_id()
         self.set_trade_buy_id(trade_id, new_id)
         return new_id
 
-    # --- NOVES FUNCIONS PER NETEJA INTEL·LIGENT ---
-    
     def get_buy_trade_uuid_for_sell_order(self, symbol, sell_price, spread_pct):
-        # Calculem el preu aproximat de la compra
         target = sell_price / (1 + (spread_pct / 100))
-        min_p = target * 0.995 # Marge petit
+        min_p = target * 0.995 
         max_p = target * 1.005
         
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         cursor.execute('''
             SELECT id FROM trade_history 
             WHERE symbol=? AND side='buy' AND price >= ? AND price <= ? 
             ORDER BY timestamp DESC LIMIT 1
         ''', (symbol, min_p, max_p))
         row = cursor.fetchone()
-        conn.close()
         return row[0] if row else None
 
     def delete_history_smart(self, symbol, keep_uuids):
-        conn = self._get_conn()
-        cursor = conn.cursor()
+        cursor = self.conn.cursor()
         
         if not keep_uuids:
-            # Si no hi ha res a protegir, esborrem tot per a aquest parell
             cursor.execute("DELETE FROM trade_history WHERE symbol=?", (symbol,))
         else:
-            # Esborrem tot excepte els UUIDs protegits
             placeholders = ','.join(['?'] * len(keep_uuids))
             sql = f"DELETE FROM trade_history WHERE symbol=? AND id NOT IN ({placeholders})"
             params = [symbol] + keep_uuids
             cursor.execute(sql, params)
             
         count = cursor.rowcount
-        conn.commit()
-        conn.close()
+        self.conn.commit()
         return count
