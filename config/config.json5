@@ -2,7 +2,7 @@
   "system": {
     "cycle_delay": 5,
     "log_level": "INFO",
-    "use_testnet": false
+    "use_testnet": false,
     "telegram_enabled": true
   },
   "default_strategy": {
@@ -17,7 +17,7 @@
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 150,
-        "grid_spread": 0.15
+        "grid_spread": 0.3
       }
     },
     {
@@ -26,7 +26,7 @@
       "strategy": {
         "grids_quantity": 15,
         "amount_per_grid": 100,
-        "grid_spread": 0.3
+        "grid_spread": 0.2
       }
     },
     {
@@ -53,7 +53,7 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 12,
-        "grid_spread": 1.2
+        "grid_spread": 0.3
       }
     },
     {
@@ -76,11 +76,11 @@
     },
     {
       "symbol": "PAXG/USDC",
-      "enabled": false,
+      "enabled": true,
       "strategy": {
         "grids_quantity": 8,
-        "amount_per_grid": 20,
-        "grid_spread": 0.4
+        "amount_per_grid": 12,
+        "grid_spread": 0.6
       }
     }
   ]
