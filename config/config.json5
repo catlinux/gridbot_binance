@@ -40,7 +40,7 @@
       "enabled": true,
       "strategy": {
         "grids_quantity": 8,
-        "amount_per_grid": 12,
+        "amount_per_grid": 10,
         "grid_spread": 0.5,
         "start_mode": "buy_2",
         "strategy_profile": "aggressive"
@@ -51,10 +51,10 @@
       "enabled": true,
       "strategy": {
         "grids_quantity": 8,
-        "amount_per_grid": 12,
-        "grid_spread": 0.35,
+        "amount_per_grid": 10,
+        "grid_spread": 0.6,
         "start_mode": "wait",
-        "strategy_profile": "aggressive"
+        "strategy_profile": "conservative"
       }
     },
     {
@@ -72,22 +72,22 @@
       "symbol": "XRP/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 8,
-        "amount_per_grid": 12,
-        "grid_spread": 1.2,
+        "grids_quantity": 10,
+        "amount_per_grid": 10,
+        "grid_spread": 0.8,
         "start_mode": "wait",
-        "strategy_profile": "manual"
+        "strategy_profile": "moderate"
       }
     },
     {
       "symbol": "DOGE/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 8,
-        "amount_per_grid": 12,
-        "grid_spread": 0.5,
+        "grids_quantity": 10,
+        "amount_per_grid": 10,
+        "grid_spread": 0.8,
         "start_mode": "wait",
-        "strategy_profile": "manual"
+        "strategy_profile": "moderate"
       }
     },
     {

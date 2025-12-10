@@ -1,30 +1,36 @@
 gridbot_binance/
 ├── config/
-│   ├── config.json5       # Configuració editable (Estratègies i Parells)
-│   ├── env.example        # Arxiu de mostra del .env
-│   └── .env               # Claus API i Secrets (NO pujar a Git)
+│   ├── config.json5               # Configuración editable (Estrategias y Pares)
+│   ├── env.example                # Archivo de muestra del .env
+│   └── .env                       # Claves API y Secretos (NO subir a Git)
 ├── core/
 │   ├── __init__.py
-│   ├── bot.py             # Lògica del Grid, Smart Reload i Tancament Manual
-│   ├── database.py        # Gestió SQLite (Històric, Sessió i Persistència)
-│   └── exchange.py        # Connector Binance (CCXT) i gestió d'ordres
+│   ├── bot.py                     # Lógica del Grid, Smart Reload y Cierre Manual
+│   ├── database.py                # Gestión SQLite (Histórico, Sesión y Persistencia)
+│   └── exchange.py                # Conector Binance (CCXT) y gestión de órdenes
+├── data/
+│   ├── bot_data.db                # Base de datos principal (SQLite)
+│   ├── bot_data.db-shm            # Índice de memoria compartida (temporal)
+│   └── bot_data.db-wal            # Registro de escritura anticipada (temporal)
 ├── utils/
 │   ├── __init__.py
-│   ├── logger.py          # Sistema de logs i colors
-│   └── telegram.py        # Sistema d'alertes al telegram
+│   ├── logger.py                  # Sistema de logs y colores
+│   └── telegram.py                # Sistema de alertas a Telegram
 ├── web/
-│   ├── static/            # Arxius estàtics (Frontend optimitzat)
+│   ├── static/                    # Archivos estáticos (Frontend optimizado)
 │   │   ├── css/
-│   │   │   └── style.css  # Estils visuals
+│   │   │   └── style.css          # Estilos visuales
 │   │   └── js/
-│   │       └── dashboard.js    # Lògica del Dashboard i Gràfics
+│   │       ├── charts.js          # Toda la lógica de gráficos (ECharts)
+│   │       ├── config.js          # Lógica del formulario de configuración y estrategias RSI
+│   │       ├── dashboard.js       # (Principal): Lógica central, API, estado global e inicialización
+│   │       └── utils.js           # Formateadores de texto, números y colores
 │   ├── templates/
-│   │   └── index.html     # Estructura HTML base
-│   └── server.py          # API Backend (FastAPI)
-├── .gitignore             # Arxiu de seguretat per mantenir dades sensibles sense pujar al github
-├── bot_data.db            # Base de dades e¡del bot
-├── main.py                # Punt d'entrada (Run)
-├── limpieza.py            # Script d'utilitat per cancel·lar tot
-├── estructura.txt         # Estructura amb arbre dels arxius
-├── README.md              # Arxiu explicatiu de les funcions del bot per al github
-└── requirements.txt       # Llibreries necessàries
+│   │   └── index.html             # Estructura HTML base
+│   └── server.py                  # API Backend (FastAPI)
+├── .gitignore                     # Archivo de seguridad para mantener datos sensibles fuera de GitHub
+├── main.py                        # Punto de entrada (Run)
+├── limpieza.py                    # Script de utilidad para cancelar todo
+├── estructura.txt                 # Estructura con árbol de archivos
+├── README.md                      # Archivo explicativo de las funciones del bot para GitHub
+└── requirements.txt               # Librerías necesarias

@@ -426,12 +426,22 @@ async def clear_history_api(req: ClearHistoryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- ENDPOINT ANALISI ESTRATÈGIA (AMB BARRA FINAL PER EVITAR REDIRECT) ---
+# --- ENDPOINT ANALISI ESTRATÈGIA (CORREGIT: FORÇA CONNEXIÓ) ---
 @app.get("/api/strategy/analyze/")
 async def analyze_strategy(symbol: str, timeframe: str = '4h'):
     try:
         rsi = 50.0
         
+        # --- MODIFICACIÓ: FORÇAR INICIALITZACIÓ SI CAL ---
+        if bot_instance:
+            if not bot_instance.connector.exchange:
+                # Si l'exchange està "adormit" (None), el despertem per força
+                # perquè necessitem dades reals per l'RSI
+                try:
+                    bot_instance.connector.check_and_reload_config()
+                except: pass
+        # -------------------------------------------------
+
         raw_candles = []
         if bot_instance and bot_instance.connector.exchange:
             try: 
@@ -440,6 +450,7 @@ async def analyze_strategy(symbol: str, timeframe: str = '4h'):
             
         if not raw_candles:
              data = db.get_pair_data(symbol)
+             # Fallback a DB (probablement 15m), però millor que error
              raw_candles = data['candles']
         
         if raw_candles:
@@ -483,7 +494,7 @@ async def analyze_strategy(symbol: str, timeframe: str = '4h'):
             "moderate": {"grids": 10, "spread": 0.8}, 
             "aggressive": {"grids": 12, "spread": 0.5}
         }
-# ---------------------------------------------------------------------
+# -------------------------------------------------------------
 
 @app.post("/api/close_order")
 async def close_order_api(req: CloseOrderRequest):

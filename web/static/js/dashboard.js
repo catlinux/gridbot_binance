@@ -1,83 +1,72 @@
-// Arxiu: gridbot_binance/web/static/js/dashboard.js
+import { fmtUSDC, fmtPrice, fmtInt, fmtCrypto, fmtPct, updateColorValue } from './utils.js';
+import { renderDonut, renderLineChart, renderCandleChart } from './charts.js';
+import { loadConfigForm, saveConfigForm, toggleCard, changeRsiTf, applyStrategy, setManual, analyzeSymbol } from './config.js';
 
-// ==========================================
-// 1. VARIABLES GLOBALS I ESTAT
-// ==========================================
+// --- ESTAT GLOBAL ---
 let currentMode = 'home';
-let charts = {};
-let initialized = false;
 let currentTimeframe = '15m';
-let currentConfigObj = null; 
+let dataCache = {}; 
 let fullGlobalHistory = []; 
 
-// CACHE PER OPTIMITZACIÓ
-let dataCache = {}; 
-// CACHE PER ESTRATÈGIES
-let strategyCache = {};
-// CACHE PER TIMEFRAME RSI
-let rsiTimeframeCache = {};
+// --- EXPORTAR A WINDOW (Perquè els onlick de l'HTML funcionin) ---
+window.loadConfigForm = loadConfigForm;
+window.saveConfigForm = saveConfigForm;
+window.toggleCard = toggleCard;
+window.changeRsiTf = changeRsiTf;
+window.applyStrategy = applyStrategy;
+window.setManual = setManual;
+window.setMode = setMode;
+window.setTimeframe = setTimeframe;
+window.loadWallet = loadWallet;
+window.resetStatistics = resetStatistics;
+window.panicStop = panicStop;
+window.panicStart = panicStart;
+window.panicCancel = panicCancel;
+window.panicSell = panicSell;
+window.clearHistory = clearHistory;
+window.closeOrder = closeOrder;
+window.filterHistory = function(h) { alert("Filtro: " + h + "h (Pendent)"); };
+window.liquidateAsset = liquidateAsset;
 
-// ==========================================
-// 2. FORMATTERS I HELPERS
-// ==========================================
+// --- FUNCIONS PRINCIPALS ---
 
-const fmtUSDC = (num) => { 
-    if (num === undefined || num === null) return '--'; 
-    return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); 
-};
+async function init() {
+    try {
+        const res = await fetch('/api/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.active_pairs) syncTabs(data.active_pairs);
+        loadHome();
+    } catch (e) { console.error("Error init:", e); }
+}
 
-const fmtPrice = (num) => {
-    if (num === undefined || num === null) return '--';
-    const val = parseFloat(num);
-    if (val < 1.0) return val.toLocaleString('es-ES', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
-    if (val < 10.0) return val.toLocaleString('es-ES', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-    if (val >= 1000) return val.toLocaleString('es-ES', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    return val.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
-
-const fmtInt = (num) => { 
-    if (num === undefined || num === null) return '--'; 
-    return parseInt(num).toLocaleString('es-ES'); 
-};
-
-const fmtCrypto = (num) => { 
-    if (!num) return '-'; 
-    const val = parseFloat(num);
-    let dec = val < 1 ? 5 : 2;
-    return val.toLocaleString('es-ES', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-};
-
-const fmtPct = (num) => {
-    if (!num) return '0,00%';
-    return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
-};
-
-const updateColorValue = (elementId, value, suffix = '') => {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    
-    // Optimització visual
-    const newText = fmtUSDC(value) + suffix;
-    if (el.innerText === newText) return;
-
-    el.innerText = newText;
-    el.classList.remove('text-success', 'text-danger', 'text-dark');
-    if (value >= 0) el.classList.add('text-success');
-    else el.classList.add('text-danger');
-};
+function syncTabs(activePairs) {
+    if (!activePairs) return;
+    const tabList = document.getElementById('mainTabs');
+    const safeSymbols = activePairs.map(s => s.replace('/', '_'));
+    const existingTabs = Array.from(tabList.querySelectorAll('li.nav-item button.nav-link'));
+    existingTabs.forEach(btn => {
+        const targetId = btn.getAttribute('data-bs-target').replace('#content-', '');
+        if (!['home', 'config', 'wallet'].includes(targetId) && !safeSymbols.includes(targetId)) {
+            btn.parentElement.remove();
+            const contentDiv = document.getElementById(`content-${targetId}`);
+            if (contentDiv) contentDiv.remove();
+        }
+    });
+    activePairs.forEach(sym => ensureTabExists(sym));
+}
 
 function ensureTabExists(symbol) {
     const safe = symbol.replace('/', '_');
-    const tabList = document.getElementById('mainTabs');
-    const tabContent = document.getElementById('mainTabsContent');
-    
     if (document.getElementById(`content-${safe}`)) return;
-
+    
+    // CORRECCIÓ 1: Definir tabList
+    const tabList = document.getElementById('mainTabs');
+    
     const li = document.createElement('li');
     li.className = 'nav-item';
     li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
     
-    // Inserim al final
     tabList.appendChild(li);
 
     const div = document.createElement('div');
@@ -89,15 +78,13 @@ function ensureTabExists(symbol) {
                 <div class="card h-100">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center">
-                            <span>Gráfico Precio</span>
-                            <div class="btn-group ms-3" role="group">
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1m')">1m</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('5m')">5m</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn active" onclick="setTimeframe('15m')">15m</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1h')">1h</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('4h')">4h</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1d')">1d</button>
-                                <button type="button" class="btn btn-outline-secondary tf-btn" onclick="setTimeframe('1w')">1w</button>
+                            <span>Gráfico</span>
+                            <div class="btn-group ms-3">
+                                <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('1m')">1m</button>
+                                <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('5m')">5m</button>
+                                <button class="btn btn-outline-secondary btn-sm tf-btn active" onclick="setTimeframe('15m')">15m</button>
+                                <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('1h')">1h</button>
+                                <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('4h')">4h</button>
                             </div>
                         </div>
                         <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
@@ -107,15 +94,13 @@ function ensureTabExists(symbol) {
             </div>
             <div class="col-lg-4 mb-3">
                 <div class="card h-100">
-                    <div class="card-header">Estado del Grid</div>
+                    <div class="card-header">Estado Grid</div>
                     <div class="card-body">
                         <div class="row g-2 text-center mb-4">
                             <div class="col-6"><div class="bg-buy p-3 rounded"><small class="d-block fw-bold mb-1">COMPRAS</small><b class="fs-3" id="count-buy-${safe}">0</b></div></div>
                             <div class="col-6"><div class="bg-sell p-3 rounded"><small class="d-block fw-bold mb-1">VENTAS</small><b class="fs-3" id="count-sell-${safe}">0</b></div></div>
                         </div>
                         <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between"><span>Próx. Compra</span><b class="text-buy" id="next-buy-${safe}">--</b></li>
-                            <li class="list-group-item d-flex justify-content-between"><span>Próx. Venta</span><b class="text-sell" id="next-sell-${safe}">--</b></li>
                             <li class="list-group-item d-flex justify-content-between mt-3 bg-light"><strong>Balance Sesión</strong><b id="sess-pnl-${safe}">--</b></li>
                             <li class="list-group-item d-flex justify-content-between bg-light"><strong>Balance Global</strong><b id="glob-pnl-${safe}">--</b></li>
                         </ul>
@@ -124,628 +109,67 @@ function ensureTabExists(symbol) {
             </div>
         </div>
         <div class="row">
-            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Órdenes Activas</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-striped mb-0"><thead class="table-light"><tr><th>Tipo</th><th>Precio</th><th>Volumen</th></tr></thead><tbody id="orders-${safe}"></tbody></table></div></div></div>
+            <div class="col-md-6 mb-3"><div class="card h-100"><div class="card-header">Órdenes</div><div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-striped mb-0"><thead class="table-light"><tr><th>Tipo</th><th>Precio</th><th>Vol</th></tr></thead><tbody id="orders-${safe}"></tbody></table></div></div></div>
             <div class="col-md-6 mb-3">
                 <div class="card h-100">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <span>Histórico de Operaciones</span>
-                        <button class="btn btn-sm btn-outline-secondary" title="Borrar Historial" onclick="clearHistory('${symbol}')">
-                            <i class="fa-solid fa-trash-can"></i>
-                        </button>
+                        <span>Historial</span>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="clearHistory('${symbol}')"><i class="fa-solid fa-trash-can"></i></button>
                     </div>
-                    <div class="card-body p-0 table-responsive" style="max-height:300px">
-                        <table class="table table-custom table-hover mb-0">
-                            <thead class="table-light"><tr><th>ID</th><th>Hora</th><th>Op</th><th>Precio</th><th>Total (USDC)</th></tr></thead>
-                            <tbody id="trades-${safe}"></tbody>
-                        </table>
-                    </div>
+                    <div class="card-body p-0 table-responsive" style="max-height:300px"><table class="table table-custom table-hover mb-0"><thead class="table-light"><tr><th>ID</th><th>Hora</th><th>Op</th><th>Precio</th><th>Total</th></tr></thead><tbody id="trades-${safe}"></tbody></table></div>
                 </div>
             </div>
         </div>`;
-    tabContent.appendChild(div);
+    document.getElementById('mainTabsContent').appendChild(div);
 }
 
-function syncTabs(activePairs) {
-    if (!activePairs) return;
-    const tabList = document.getElementById('mainTabs');
-    const safeSymbols = activePairs.map(s => s.replace('/', '_'));
-
-    const existingTabs = Array.from(tabList.querySelectorAll('li.nav-item button.nav-link'));
-    existingTabs.forEach(btn => {
-        const targetId = btn.getAttribute('data-bs-target').replace('#content-', '');
-        if (targetId !== 'home' && targetId !== 'config' && targetId !== 'wallet' && !safeSymbols.includes(targetId)) {
-            btn.parentElement.remove();
-            const contentDiv = document.getElementById(`content-${targetId}`);
-            if (contentDiv) contentDiv.remove();
-        }
-    });
-
-    activePairs.forEach(sym => {
-        ensureTabExists(sym);
-    });
-}
-
-// ==========================================
-// 3. GESTIÓ DE LA UI
-// ==========================================
-
-function setMode(mode) {
-    currentMode = mode;
-    dataCache = {}; 
-    
-    if (mode === 'home') loadHome();
-    else if (mode === 'wallet') loadWallet();
-    else if (mode !== 'config') loadSymbol(mode);
-    
-    if (mode !== 'home' && mode !== 'config' && mode !== 'wallet') {
-        setTimeout(() => {
-            const safe = mode.replace('/', '_');
-            if (charts[safe]) charts[safe].resize();
-        }, 200);
-    }
+function setMode(m) {
+    currentMode = m; dataCache = {};
+    if(m==='home') loadHome();
+    else if(m==='wallet') loadWallet();
+    else if(m!=='config') loadSymbol(m);
 }
 
 function setTimeframe(tf) {
     currentTimeframe = tf;
-    dataCache = {}; 
-    document.querySelectorAll('.tf-btn').forEach(btn => { 
-        btn.classList.remove('active'); 
-        if(btn.innerText.toLowerCase() === tf) btn.classList.add('active'); 
-    });
-    if (currentMode !== 'home' && currentMode !== 'config' && currentMode !== 'wallet') loadSymbol(currentMode);
+    document.querySelectorAll('.tf-btn').forEach(b => { b.classList.remove('active'); if(b.innerText.toLowerCase()===tf) b.classList.add('active'); });
+    if(currentMode!=='home' && currentMode!=='config' && currentMode!=='wallet') loadSymbol(currentMode);
 }
 
-// --- CONFIG FORM ---
-async function loadConfigForm() {
-    try {
-        const res = await fetch('/api/config');
-        const data = await res.json();
-        currentConfigObj = JSON5.parse(data.content);
-        
-        document.getElementById('sys-cycle').value = currentConfigObj.system.cycle_delay;
-        
-        const configTab = document.getElementById('content-config');
-        const systemCardBody = configTab.querySelector('.card-body'); 
-        
-        if (systemCardBody && !document.getElementById('sys-controls-container')) {
-            const div = document.createElement('div');
-            div.id = 'sys-controls-container'; 
-            div.className = 'mt-3 p-3 bg-light border rounded';
-            div.innerHTML = `
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input" type="checkbox" role="switch" id="sys-testnet">
-                            <label class="form-check-label fw-bold" for="sys-testnet">
-                                MODO TESTNET (Simulación)
-                            </label>
-                            <div class="form-text">Si desmarcas esta casilla, operarás con DINERO REAL en Binance.</div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch" id="sys-telegram">
-                            <label class="form-check-label fw-bold" for="sys-telegram">
-                                <i class="fa-brands fa-telegram text-primary"></i> ALERTAS TELEGRAM
-                            </label>
-                            <div class="form-text">Activa o desactiva el envío de notificaciones.</div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            systemCardBody.appendChild(div);
-        }
-        
-        if (document.getElementById('sys-testnet')) {
-            const isTest = currentConfigObj.system.use_testnet !== undefined ? currentConfigObj.system.use_testnet : true;
-            document.getElementById('sys-testnet').checked = isTest;
-        }
-
-        if (document.getElementById('sys-telegram')) {
-            const isTg = currentConfigObj.system.telegram_enabled !== undefined ? currentConfigObj.system.telegram_enabled : true;
-            document.getElementById('sys-telegram').checked = isTg;
-        }
-
-        const container = document.getElementById('coins-config-container');
-        container.innerHTML = '';
-        currentConfigObj.pairs.forEach((pair, index) => {
-            const strategy = pair.strategy || currentConfigObj.default_strategy;
-            const isEnabled = pair.enabled;
-            const cardClass = isEnabled ? '' : 'coin-disabled';
-            const checked = isEnabled ? 'checked' : '';
-            
-            const startMode = strategy.start_mode || 'wait';
-            const profile = strategy.strategy_profile || 'manual';
-            
-            const html = `
-                <div class="col-md-6 col-xl-4 mb-4">
-                    <div class="card h-100 coin-card ${cardClass}" id="card-pair-${index}">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <span class="fw-bold fs-5">${pair.symbol}</span>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" role="switch" id="enable-${index}" ${checked} onchange="toggleCard(${index})">
-                                <label class="form-check-label fw-bold" for="enable-${index}">${isEnabled ? 'ON' : 'OFF'}</label>
-                            </div>
-                        </div>
-                        
-                        <div class="card-body">
-                            <div class="mb-3 p-2 bg-light border rounded text-center" id="rsi-box-${index}">
-                                <small>Cargando análisis RSI...</small>
-                            </div>
-                            <input type="hidden" id="profile-${index}" value="${profile}">
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Inversión por Línea (USDC)</label>
-                                <div class="input-group"><span class="input-group-text">$</span><input type="number" class="form-control" id="amount-${index}" value="${strategy.amount_per_grid}"></div>
-                            </div>
-                            <div class="row">
-                                <div class="col-6 mb-3"><label class="form-label">Nº Líneas</label><input type="number" class="form-control" id="qty-${index}" value="${strategy.grids_quantity}" oninput="setManual(${index})"></div>
-                                <div class="col-6 mb-3"><label class="form-label">Spread (%)</label><div class="input-group"><input type="number" class="form-control" id="spread-${index}" value="${strategy.grid_spread}" step="0.1" oninput="setManual(${index})"><span class="input-group-text">%</span></div></div>
-                            </div>
-                            
-                            <hr class="text-muted">
-                            
-                            <label class="form-label fw-bold small text-muted"><i class="fa-solid fa-flag-checkered me-1"></i> MODALIDAD DE ARRANQUE</label>
-                            <div class="d-flex justify-content-between mb-2">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="startmode-${index}" id="sm-wait-${index}" value="wait" ${startMode=='wait'?'checked':''}>
-                                    <label class="form-check-label small" for="sm-wait-${index}">🐢 Esperar</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="startmode-${index}" id="sm-buy1-${index}" value="buy_1" ${startMode=='buy_1'?'checked':''}>
-                                    <label class="form-check-label small" for="sm-buy1-${index}">🐇 Compra 1</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="startmode-${index}" id="sm-buy2-${index}" value="buy_2" ${startMode=='buy_2'?'checked':''}>
-                                    <label class="form-check-label small" for="sm-buy2-${index}">🐅 Carga x2</label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
-            container.innerHTML += html;
-            
-            setTimeout(() => analyzeSymbol(pair.symbol, index, profile), 500 + (index * 200));
-        });
-    } catch (e) { console.error(e); alert("Error leyendo la configuración."); }
-}
-
-async function analyzeSymbol(symbol, index, currentProfile) {
-    try {
-        const tfSelect = document.getElementById(`rsi-tf-${index}`);
-        const savedTf = rsiTimeframeCache[index] || '4h';
-        
-        // MODIFICACIÓ CLAU: Barra '/' final per evitar redirect 307
-        const res = await fetch(`/api/strategy/analyze/?symbol=${encodeURIComponent(symbol)}&timeframe=${savedTf}&_=${Date.now()}`);
-        if (!res.ok) throw new Error("API Error");
-        const data = await res.json();
-        
-        strategyCache[index] = data;
-        
-        const box = document.getElementById(`rsi-box-${index}`);
-        if (!box) return;
-        
-        let rsiColor = 'text-muted';
-        if (data.rsi < 35) rsiColor = 'text-success fw-bold';
-        else if (data.rsi > 65) rsiColor = 'text-danger fw-bold';
-        else rsiColor = 'text-primary';
-        
-        const btnCons = currentProfile === 'conservative' ? 'btn-success' : 'btn-outline-dark';
-        const btnMod = currentProfile === 'moderate' ? 'btn-primary' : 'btn-outline-dark';
-        const btnAgg = currentProfile === 'aggressive' ? 'btn-danger' : 'btn-outline-dark';
-        const btnMan = currentProfile === 'manual' ? 'btn-secondary' : 'btn-outline-dark';
-        
-        const btn15m = savedTf === '15m' ? 'btn-secondary active' : 'btn-outline-secondary';
-        const btn1h = savedTf === '1h' ? 'btn-secondary active' : 'btn-outline-secondary';
-        const btn4h = savedTf === '4h' ? 'btn-secondary active' : 'btn-outline-secondary';
-
-        box.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="small fw-bold">RSI: <span class="${rsiColor}">${data.rsi}</span></span>
-                <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-xs ${btn15m}" onclick="changeRsiTf('${symbol}', ${index}, '${currentProfile}', '15m')">15m</button>
-                    <button type="button" class="btn btn-xs ${btn1h}" onclick="changeRsiTf('${symbol}', ${index}, '${currentProfile}', '1h')">1h</button>
-                    <button type="button" class="btn btn-xs ${btn4h}" onclick="changeRsiTf('${symbol}', ${index}, '${currentProfile}', '4h')">4h</button>
-                </div>
-            </div>
-            <div class="d-flex justify-content-between gap-1">
-                <button id="btn-cons-${index}" class="btn btn-sm ${btnCons} flex-fill" title="Conservadora" onclick="applyStrategy(${index}, 'conservative')">🛡️</button>
-                <button id="btn-mod-${index}" class="btn btn-sm ${btnMod} flex-fill" title="Moderada" onclick="applyStrategy(${index}, 'moderate')">⚖️</button>
-                <button id="btn-agg-${index}" class="btn btn-sm ${btnAgg} flex-fill" title="Agresiva" onclick="applyStrategy(${index}, 'aggressive')">🚀</button>
-                <button id="btn-man-${index}" class="btn btn-sm ${btnMan} flex-fill" disabled style="opacity:1" title="Manual">🛠️</button>
-            </div>
-            <div class="mt-1 small text-muted text-start fst-italic" style="font-size:0.75rem">
-               Estrategia: <strong>${currentProfile ? currentProfile.toUpperCase() : 'MANUAL'}</strong>
-            </div>
-        `;
-    } catch (e) { 
-        console.error("Error RSI", e); 
-        const box = document.getElementById(`rsi-box-${index}`);
-        if(box) box.innerHTML = '<small class="text-danger">Error cargando RSI</small>';
-    }
-}
-
-function changeRsiTf(symbol, index, profile, tf) {
-    rsiTimeframeCache[index] = tf;
-    analyzeSymbol(symbol, index, profile);
-}
-
-function updateButtons(index, activeProfile) {
-    document.getElementById(`profile-${index}`).value = activeProfile;
-    
-    const bC = document.getElementById(`btn-cons-${index}`);
-    const bM = document.getElementById(`btn-mod-${index}`);
-    const bA = document.getElementById(`btn-agg-${index}`);
-    const bMan = document.getElementById(`btn-man-${index}`);
-    
-    if(bC) bC.className = `btn btn-sm flex-fill ${activeProfile==='conservative' ? 'btn-success' : 'btn-outline-dark'}`;
-    if(bM) bM.className = `btn btn-sm flex-fill ${activeProfile==='moderate' ? 'btn-primary' : 'btn-outline-dark'}`;
-    if(bA) bA.className = `btn btn-sm flex-fill ${activeProfile==='aggressive' ? 'btn-danger' : 'btn-outline-dark'}`;
-    if(bMan) bMan.className = `btn btn-sm flex-fill ${activeProfile==='manual' ? 'btn-secondary' : 'btn-outline-dark'}`;
-}
-
-function applyStrategy(index, type) {
-    const data = strategyCache[index];
-    if (!data || !data[type]) {
-        alert("Datos de estrategia no disponibles todavía.");
-        return;
-    }
-    
-    const s = data[type];
-    if(confirm(`¿Aplicar estrategia ${type.toUpperCase()}?\n\nLíneas: ${s.grids}\nSpread: ${s.spread}%`)) {
-        document.getElementById(`qty-${index}`).value = s.grids;
-        document.getElementById(`spread-${index}`).value = s.spread;
-        updateButtons(index, type);
-    }
-}
-
-function setManual(index) {
-    updateButtons(index, 'manual');
-}
-
-function toggleCard(index) {
-    const checkbox = document.getElementById(`enable-${index}`);
-    const card = document.getElementById(`card-pair-${index}`);
-    const label = checkbox.nextElementSibling;
-    if (checkbox.checked) { card.classList.remove('coin-disabled'); label.innerText = 'ON'; } 
-    else { card.classList.add('coin-disabled'); label.innerText = 'OFF'; }
-}
-
-async function saveConfigForm() {
-    if (!currentConfigObj) return;
-    currentConfigObj.system.cycle_delay = parseInt(document.getElementById('sys-cycle').value);
-    
-    const testnetCheckbox = document.getElementById('sys-testnet');
-    if (testnetCheckbox) {
-        currentConfigObj.system.use_testnet = testnetCheckbox.checked;
-    }
-
-    const tgCheckbox = document.getElementById('sys-telegram');
-    if (tgCheckbox) {
-        currentConfigObj.system.telegram_enabled = tgCheckbox.checked;
-    }
-
-    currentConfigObj.pairs.forEach((pair, index) => {
-        const isEnabled = document.getElementById(`enable-${index}`).checked;
-        const amount = parseFloat(document.getElementById(`amount-${index}`).value);
-        const qty = parseInt(document.getElementById(`qty-${index}`).value);
-        const spread = parseFloat(document.getElementById(`spread-${index}`).value);
-        const profile = document.getElementById(`profile-${index}`).value;
-        
-        let startMode = 'wait';
-        if (document.getElementById(`sm-buy1-${index}`).checked) startMode = 'buy_1';
-        if (document.getElementById(`sm-buy2-${index}`).checked) startMode = 'buy_2';
-
-        pair.enabled = isEnabled;
-        if (!pair.strategy) pair.strategy = {};
-        pair.strategy.amount_per_grid = amount;
-        pair.strategy.grids_quantity = qty;
-        pair.strategy.grid_spread = spread;
-        pair.strategy.start_mode = startMode;
-        pair.strategy.strategy_profile = profile; 
-    });
-
-    const jsonString = JSON.stringify(currentConfigObj, null, 2);
-    const msgBox = document.getElementById('config-alert');
-    
-    try {
-        const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: jsonString }) });
-        const data = await res.json();
-        msgBox.style.display = 'block';
-        if (res.ok) { 
-            msgBox.className = 'alert alert-success'; 
-            msgBox.innerHTML = '<i class="fa-solid fa-check-circle"></i> Configuración guardada! Recargando...'; 
-            setTimeout(() => { location.reload(); }, 1500); 
-        } else { 
-            msgBox.className = 'alert alert-danger'; 
-            msgBox.innerText = 'Error: ' + data.detail; 
-        }
-    } catch (e) { alert("Error de conexión al guardar."); }
-}
-
-
-// ==========================================
-// 4. GRÀFICS (ECHARTS LOGIC)
-// ==========================================
-
-function renderDonut(domId, data, isCurrency = false) {
-    const dom = document.getElementById(domId);
-    if (!dom) return;
-    const chart = echarts.getInstanceByDom(dom) || echarts.init(dom);
-    const chartData = (data && data.length > 0) ? data : [{value: 0, name: 'Sin Datos'}];
-    
-    const cacheKey = domId + JSON.stringify(chartData);
-    if (dataCache[cacheKey]) return;
-    dataCache[cacheKey] = true;
-
-    chart.setOption({ 
-        tooltip: { trigger: 'item', formatter: function(params) { const val = isCurrency ? fmtUSDC(params.value) : fmtInt(params.value); return `${params.name}: ${val} (${params.percent}%)`; } }, 
-        legend: { orient: 'vertical', left: '0%', top: 'center', itemGap: 10, textStyle: { fontSize: 11, color: '#6b7280' } }, 
-        series: [{ type: 'pie', radius: ['40%', '80%'], center: ['65%', '50%'], label: { show: false, position: 'center' }, emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } }, data: chartData }] 
-    });
-}
-
-function renderLineChart(domId, data, color) {
-    const dom = document.getElementById(domId);
-    if (!dom) return;
-    if (!data || data.length === 0) return;
-
-    const cacheKey = domId + data.length;
-    if (dataCache[cacheKey]) return;
-    dataCache[cacheKey] = true;
-
-    let chart = echarts.getInstanceByDom(dom);
-    if (!chart) chart = echarts.init(dom);
-    
-    const option = {
-        tooltip: {
-            trigger: 'axis',
-            formatter: function (params) {
-                const date = new Date(params[0].value[0]);
-                const val = fmtUSDC(params[0].value[1]);
-                return `${date.toLocaleString()}<br/><b>${val} USDC</b>`;
-            }
-        },
-        grid: { left: 10, right: 10, top: 10, bottom: 10, containLabel: true },
-        xAxis: {
-            type: 'time',
-            splitLine: { show: false },
-            axisLabel: { fontSize: 10 }
-        },
-        yAxis: {
-            type: 'value',
-            scale: true, 
-            splitLine: { show: true, lineStyle: { type: 'dashed', color: '#eee' } },
-            axisLabel: { fontSize: 10 }
-        },
-        series: [{
-            type: 'line',
-            showSymbol: false,
-            data: data,
-            itemStyle: { color: color },
-            areaStyle: {
-                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: color },
-                    { offset: 1, color: 'rgba(255, 255, 255, 0)' }
-                ]),
-                opacity: 0.2
-            },
-            lineStyle: { width: 2 }
-        }]
-    };
-    chart.setOption(option);
-}
-
-async function loadBalanceCharts() {
-    try {
-        const res = await fetch('/api/history/balance');
-        if (!res.ok) return;
-        const data = await res.json();
-        fullGlobalHistory = data.global; 
-        renderLineChart('balanceChartSession', data.session, '#0ecb81');
-        renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); 
-    } catch(e) { console.error("Error loading charts", e); }
-}
-
-function renderCandleChart(safeSym, data, gridLines, activeOrders = []) {
-    const dom = document.getElementById(`chart-${safeSym}`);
-    if(!dom) return;
-    if (!data || data.length === 0) return;
-    
-    const currentStateSignature = JSON.stringify({
-        lastCandle: data[data.length-1], 
-        orders: activeOrders.length,     
-        grid: gridLines.length
-    });
-    
-    if (dataCache[`sig_${safeSym}`] === currentStateSignature) return;
-    dataCache[`sig_${safeSym}`] = currentStateSignature;
-
-    let chart = echarts.getInstanceByDom(dom);
-    if (!chart) chart = echarts.init(dom);
-
-    const priceData = data.map(i => [i[0], parseFloat(i[2])]); 
-    let allPrices = [];
-    
-    data.forEach(candle => {
-        const low = parseFloat(candle[3]);
-        const high = parseFloat(candle[4]);
-        if (!isNaN(low)) allPrices.push(low);
-        if (!isNaN(high)) allPrices.push(high);
-    });
-
-    activeOrders.forEach(o => {
-        const p = parseFloat(o.price);
-        if (!isNaN(p)) allPrices.push(p);
-    });
-
-    gridLines.forEach(g => {
-        const p = parseFloat(g);
-        if (!isNaN(p)) allPrices.push(p);
-    });
-
-    let yMin = 0; 
-    let yMax = 0;
-
-    if (allPrices.length > 0) {
-        yMin = Math.min(...allPrices);
-        yMax = Math.max(...allPrices);
-
-        const padding = (yMax - yMin) * 0.05; 
-        const safePadding = padding === 0 ? yMin * 0.02 : padding; 
-        
-        yMin -= safePadding;
-        yMax += safePadding;
-    } else {
-        const lastPrice = priceData.length ? priceData[priceData.length-1][1] : 0;
-        yMin = lastPrice * 0.95;
-        yMax = lastPrice * 1.05;
-    }
-
-    const gridMarkLines = gridLines.map(p => ({
-        yAxis: parseFloat(p),
-        lineStyle: { color: '#e5e7eb', type: 'dotted', width: 1 },
-        label: { show: false },
-        silent: true
-    }));
-
-    const orderMarkLines = activeOrders.map(o => ({
-        yAxis: parseFloat(o.price),
-        lineStyle: {
-            color: o.side === 'buy' ? '#0ecb81' : '#f6465d',
-            type: 'solid',
-            width: 1.5
-        },
-        label: {
-            show: true,
-            position: 'end',
-            formatter: (o.side === 'buy' ? 'COMPRA' : 'VENTA') + ' ' + fmtPrice(o.price),
-            color: '#fff',
-            backgroundColor: o.side === 'buy' ? '#0ecb81' : '#f6465d',
-            padding: [3, 5],
-            borderRadius: 3,
-            fontSize: 10,
-            fontWeight: 'bold',
-            distance: [0, 0]
-        }
-    }));
-
-    const option = { 
-        animation: false, 
-        grid: { left: 10, right: 85, top: 10, bottom: 20, containLabel: true }, 
-        
-        tooltip: { 
-            trigger: 'axis', 
-            axisPointer: { type: 'cross' },
-            formatter: function (params) {
-                if(!params || params.length === 0) return '';
-                const date = params[0].axisValue;
-                const val = fmtPrice(params[0].data[1]);
-                return `<b>${date}</b><br/>Precio: ${val}`;
-            }
-        }, 
-        
-        xAxis: { 
-            type: 'category', 
-            data: data.map(i => i[0]), 
-            scale: true, 
-            boundaryGap: false,
-            axisLine: { show: false }, 
-            axisTick: { show: false }, 
-            axisLabel: { show: false } 
-        }, 
-        yAxis: { 
-            type: 'value',
-            position: 'right', 
-            min: yMin,
-            max: yMax,
-            splitLine: { show: true, lineStyle: { color: '#f3f4f6' } },
-            axisLabel: { 
-                formatter: function (value) { return fmtPrice(value); },
-                fontSize: 10 
-            }
-        }, 
-        series: [
-            { 
-                type: 'line', 
-                data: priceData,
-                showSymbol: false,
-                lineStyle: { width: 2, color: '#3b82f6' },
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
-                        { offset: 1, color: 'rgba(59, 130, 246, 0)' }
-                    ])
-                },
-                markLine: { 
-                    symbol: 'none', 
-                    data: [...gridMarkLines, ...orderMarkLines],
-                    silent: true,
-                    labelLayout: {
-                        hideOverlap: false 
-                    },
-                    animation: false
-                } 
-            }
-        ] 
-    };
-    
-    chart.setOption(option);
-}
-
-
-// ==========================================
-// 5. API CALLS & DATA FETCHING
-// ==========================================
+// --- LOADERS ---
 
 async function loadHome() {
     try {
         const res = await fetch('/api/status');
         const data = await res.json();
-        
-        if (data.active_pairs) {
-            syncTabs(data.active_pairs);
-        }
+        if (data.active_pairs) syncTabs(data.active_pairs);
         
         const badge = document.getElementById('status-badge');
-        const headerDiv = badge.parentElement;
-
         let engineBtn = document.getElementById('btn-engine-toggle');
         if (!engineBtn) {
             engineBtn = document.createElement('button');
             engineBtn.id = 'btn-engine-toggle';
-            engineBtn.className = 'btn btn-sm btn-outline-light ms-3';
+            engineBtn.className = 'btn btn-sm ms-3';
             engineBtn.onclick = toggleEngine;
-            headerDiv.insertBefore(engineBtn, badge.nextSibling);
+            badge.parentElement.insertBefore(engineBtn, badge.nextSibling);
         }
-
-        if (data.status === 'Stopped') {
-            badge.innerText = 'DETENIDO';
-            badge.className = 'badge bg-danger me-2';
-            engineBtn.innerHTML = '<i class="fa-solid fa-power-off me-1"></i> ENCENDER SISTEMA';
-            engineBtn.className = 'btn btn-sm btn-success fw-bold ms-3';
+        
+        if(data.status === 'Stopped') {
+            badge.innerText = 'DETENIDO'; badge.className = 'badge bg-danger me-2';
+            engineBtn.innerHTML = '<i class="fa-solid fa-power-off"></i> ENCENDER'; engineBtn.className = 'btn btn-sm btn-success ms-3 fw-bold';
         } else {
-            engineBtn.innerHTML = '<i class="fa-solid fa-power-off me-1"></i> APAGAR SISTEMA';
-            engineBtn.className = 'btn btn-sm btn-outline-danger ms-3';
-            
-            if (data.status === 'Paused') {
-                badge.innerText = 'PAUSADO';
-                badge.className = 'badge bg-warning text-dark me-2';
-            } else {
-                badge.innerText = 'OPERATIVO';
-                badge.className = 'badge bg-success me-2';
-            }
+            badge.innerText = data.status === 'Paused' ? 'PAUSADO' : 'OPERATIVO';
+            badge.className = data.status === 'Paused' ? 'badge bg-warning text-dark me-2' : 'badge bg-success me-2';
+            engineBtn.innerHTML = '<i class="fa-solid fa-power-off"></i> APAGAR'; engineBtn.className = 'btn btn-sm btn-outline-danger ms-3';
         }
 
         document.getElementById('total-balance').innerText = `${fmtUSDC(data.total_usdc_value)} USDC`;
-
         updateColorValue('dash-profit-session', data.stats.session.profit, ' $');
         updateColorValue('dash-profit-total', data.stats.global.profit, ' $');
-
         document.getElementById('dash-trades-session').innerText = fmtInt(data.stats.session.trades);
         document.getElementById('dash-coin-session').innerText = data.stats.session.best_coin;
         document.getElementById('dash-uptime-session').innerText = data.stats.session.uptime;
-
+        
         document.getElementById('dash-trades-total').innerText = fmtInt(data.stats.global.trades);
         document.getElementById('dash-coin-total').innerText = data.stats.global.best_coin;
         document.getElementById('dash-uptime-total').innerText = data.stats.global.uptime;
@@ -755,45 +179,15 @@ async function loadHome() {
         renderDonut('globalTradesChart', data.global_trades_distribution, false);
         
         loadBalanceCharts();
-
-        const strategiesBody = document.getElementById('strategies-table-body');
-        if (strategiesBody) {
-            strategiesBody.innerHTML = data.strategies.map(s => {
-                
-                let displayTotalPnl = s.total_pnl;
-                if (Math.abs(displayTotalPnl) > 5000) displayTotalPnl = 0.00;
-
-                const totalPnlClass = displayTotalPnl >= 0 ? 'text-success' : 'text-danger';
-                const totalPnlSign = displayTotalPnl >= 0 ? '+' : '';
-                const totalPnlText = `${totalPnlSign}${fmtUSDC(displayTotalPnl)} $`;
-                const totalPnlFinalClass = s.total_trades > 0 || displayTotalPnl !== 0 ? totalPnlClass : 'text-muted';
-
-                const sessPnlClass = s.session_pnl >= 0 ? 'text-success' : 'text-danger';
-                const sessPnlSign = s.session_pnl >= 0 ? '+' : '';
-                const sessPnlText = `${sessPnlSign}${fmtUSDC(s.session_pnl)} $`;
-
-                const safeSym = s.symbol.replace('/', '_');
-                
-                return `
-                    <tr>
-                        <td class="fw-bold">${s.symbol}</td>
-                        <td><span class="badge bg-success bg-opacity-25 text-success">Activo</span></td>
-                        <td><small>${s.grids} Líneas @ ${s.amount}$ (Spread ${s.spread}%)</small></td>
-                        <td class="fw-bold">${s.total_trades}</td>
-                        <td class="${totalPnlFinalClass} fw-bold">${totalPnlText}</td>
-                        <td class="${sessPnlClass} fw-bold">${sessPnlText}</td>
-                        <td class="text-end">
-                            <button class="btn btn-sm btn-outline-primary" onclick="document.querySelector('[data-bs-target=\\'#content-${safeSym}\\']').click()">
-                                <i class="fa-solid fa-chart-line"></i> Ver
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
         loadGlobalOrders();
 
+        const stTable = document.getElementById('strategies-table-body');
+        if(stTable) {
+            stTable.innerHTML = data.strategies.map(s => {
+                const safe = s.symbol.replace('/', '_');
+                return `<tr><td class="fw-bold">${s.symbol}</td><td><span class="badge bg-success bg-opacity-25 text-success">Activo</span></td><td><small>${s.grids} Líneas @ ${s.amount}$ (${s.spread}%)</small></td><td class="fw-bold">${s.total_trades}</td><td class="${s.total_pnl>=0?'text-success':'text-danger'} fw-bold">${fmtUSDC(s.total_pnl)} $</td><td class="${s.session_pnl>=0?'text-success':'text-danger'} fw-bold">${fmtUSDC(s.session_pnl)} $</td><td class="text-end"><button class="btn btn-sm btn-outline-primary" onclick="document.querySelector('[data-bs-target=\\'#content-${safe}\\']').click()"><i class="fa-solid fa-chart-line"></i></button></td></tr>`;
+            }).join('');
+        }
     } catch(e) { console.error(e); }
 }
 
@@ -805,29 +199,36 @@ async function loadSymbol(symbol) {
         const data = await res.json();
         
         document.getElementById(`price-${safe}`).innerText = `${fmtPrice(data.price)} USDC`;
-        
         renderCandleChart(safe, data.chart_data, data.grid_lines, data.open_orders);
         
-        const buys = data.open_orders.filter(o => o.side === 'buy').sort((a,b) => b.price - a.price);
-        const sells = data.open_orders.filter(o => o.side === 'sell').sort((a,b) => a.price - b.price);
-        document.getElementById(`count-buy-${safe}`).innerText = buys.length;
-        document.getElementById(`count-sell-${safe}`).innerText = sells.length;
-        
-        document.getElementById(`next-buy-${safe}`).innerText = buys.length ? fmtPrice(buys[0].price) : '-';
-        document.getElementById(`next-sell-${safe}`).innerText = sells.length ? fmtPrice(sells[0].price) : '-';
-        
+        document.getElementById(`count-buy-${safe}`).innerText = data.open_orders.filter(o => o.side === 'buy').length;
+        document.getElementById(`count-sell-${safe}`).innerText = data.open_orders.filter(o => o.side === 'sell').length;
         updateColorValue(`sess-pnl-${safe}`, data.session_pnl, ' $');
         updateColorValue(`glob-pnl-${safe}`, data.global_pnl, ' $');
         
-        const allOrders = [...sells.reverse(), ...buys];
-        document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase() === 'BUY' ? 'COMPRA' : 'VENTA'}</b></td><td>${fmtPrice(o.price)}</td><td>${fmtCrypto(o.amount)}</td></tr>`).join('');
+        const allOrders = [...data.open_orders].sort((a,b) => b.price - a.price);
+        document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase()}</b></td><td>${fmtPrice(o.price)}</td><td>${fmtCrypto(o.amount)}</td></tr>`).join('');
         
-        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => {
-            const idBadge = t.buy_id ? `<span class="badge bg-secondary">#${t.buy_id}</span>` : '<span class="text-muted small">-</span>';
-            return `<tr><td>${idBadge}</td><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side === 'buy' ? 'COMPRA' : 'VENTA'}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`;
-        }).join('');
-        
+        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td><span class="badge bg-secondary">${t.buy_id || '-'}</span></td><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side.toUpperCase()}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`).join('');
+
     } catch(e) { console.error(e); }
+}
+
+async function loadWallet() {
+    const tbody = document.getElementById('wallet-table-body');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary"></div></td></tr>';
+    try {
+        const res = await fetch('/api/wallet');
+        const data = await res.json();
+        if(data.length===0) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Sin activos</td></tr>'; return; }
+        
+        tbody.innerHTML = data.map(item => {
+            const freeVal = item.free * item.price;
+            const lockedVal = item.locked * item.price;
+            let btn = (item.asset!=='USDC' && item.asset!=='USDT') ? `<button class="btn btn-sm btn-outline-danger" onclick="liquidateAsset('${item.asset}')">Vender</button>` : '<span class="text-muted small">Base</span>';
+            return `<tr><td class="fw-bold">${item.asset}</td><td>${fmtCrypto(item.free)} <small class="text-muted">(${fmtUSDC(freeVal)}$)</small></td><td class="${item.locked>0?'text-danger':''}">${fmtCrypto(item.locked)} <small class="text-muted">(${fmtUSDC(lockedVal)}$)</small></td><td>${fmtCrypto(item.total)}</td><td class="fw-bold">${fmtUSDC(item.usdc_value)}$</td><td class="text-end">${btn}</td></tr>`;
+        }).join('');
+    } catch(e) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error</td></tr>'; }
 }
 
 async function loadGlobalOrders() {
@@ -835,318 +236,56 @@ async function loadGlobalOrders() {
         const res = await fetch('/api/orders');
         const orders = await res.json();
         const tbody = document.getElementById('global-orders-table');
+        if(orders.length === 0) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No hay órdenes</td></tr>'; return; }
         
-        const thead = document.querySelector('#global-orders-table').previousElementSibling;
-        if (thead) {
-            thead.innerHTML = `
-                <tr>
-                    <th>Par</th>
-                    <th>Tipo</th>
-                    <th>Precio Orden</th>
-                    <th>Precio Entrada</th>
-                    <th>Precio Actual</th>
-                    <th>PnL (Latente)</th>
-                    <th>Valor ($)</th>
-                    <th class="text-end">Acción</th>
-                </tr>`;
-        }
-
-        if (orders.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No hay órdenes activas</td></tr>';
-            return;
-        }
-
-        const cacheKey = 'global_orders_' + JSON.stringify(orders);
-        if (dataCache[cacheKey]) return;
-        dataCache[cacheKey] = true;
-
-        orders.sort((a, b) => a.symbol.localeCompare(b.symbol) || b.price - a.price);
-
+        orders.sort((a,b) => a.symbol.localeCompare(b.symbol) || b.price - a.price);
+        
         tbody.innerHTML = orders.map(o => {
             const isBuy = o.side === 'buy';
-            const typeBadge = isBuy ? '<span class="badge bg-success">COMPRA</span>' : '<span class="badge bg-danger">VENTA</span>';
-            const actionBtnClass = isBuy ? 'btn-outline-secondary' : 'btn-outline-danger';
-            const actionIcon = isBuy ? 'fa-times' : 'fa-money-bill-transfer';
-            const actionText = isBuy ? 'Cancelar' : 'Vender';
-            const actionTitle = isBuy ? 'Recuperar USDC' : 'Vender crypto a mercado';
-
-            let pnlDisplay = '-';
-            let entryDisplay = '-';
-            let pnlClass = '';
-
-            if (!isBuy && o.entry_price > 0 && o.current_price > 0) {
-                const pnlPercent = ((o.current_price - o.entry_price) / o.entry_price) * 100;
-                pnlDisplay = fmtPct(pnlPercent);
-                pnlClass = pnlPercent >= 0 ? 'text-success fw-bold' : 'text-danger fw-bold';
-                entryDisplay = fmtPrice(o.entry_price);
-            } else if (isBuy) {
-                entryDisplay = '<small class="text-muted">Target</small>'; 
+            let pnlDisplay = '-', pnlClass = '';
+            if(!isBuy && o.entry_price > 0) {
+                const pnl = ((o.current_price - o.entry_price)/o.entry_price)*100;
+                pnlDisplay = fmtPct(pnl); pnlClass = pnl>=0 ? 'text-success fw-bold':'text-danger fw-bold';
             }
-
-            return `
-                <tr>
-                    <td class="fw-bold">${o.symbol}</td>
-                    <td>${typeBadge}</td>
-                    <td>${fmtPrice(o.price)}</td>
-                    <td class="text-muted">${entryDisplay}</td>
-                    <td>${fmtPrice(o.current_price)}</td>
-                    <td class="${pnlClass}">${pnlDisplay}</td>
-                    <td>${fmtUSDC(o.total_value)}</td>
-                    <td class="text-end">
-                        <button class="btn btn-sm ${actionBtnClass}" title="${actionTitle}" onclick="closeOrder('${o.symbol}', '${o.id}', '${o.side}', ${o.amount})">
-                            <i class="fa-solid ${actionIcon} me-1"></i> ${actionText}
-                        </button>
-                    </td>
-                </tr>
-            `;
+            return `<tr><td class="fw-bold">${o.symbol}</td><td><span class="badge ${isBuy?'bg-success':'bg-danger'}">${isBuy?'COMPRA':'VENTA'}</span></td><td>${fmtPrice(o.price)}</td><td class="text-muted">${isBuy?'-':fmtPrice(o.entry_price)}</td><td>${fmtPrice(o.current_price)}</td><td class="${pnlClass}">${pnlDisplay}</td><td>${fmtUSDC(o.total_value)}</td><td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="closeOrder('${o.symbol}','${o.id}','${o.side}',${o.amount})"><i class="fa-solid fa-times"></i></button></td></tr>`;
         }).join('');
-    } catch (e) { console.error("Error cargando órdenes:", e); }
+    } catch(e) {}
 }
 
-async function closeOrder(symbol, id, side, amount) {
-    const action = side === 'buy' ? 'cancelar esta orden' : 'VENDER a mercado';
-    if (!confirm(`¿Estás seguro que quieres ${action}?`)) return;
-
+// CORRECCIÓ 2: La funció que faltava
+async function loadBalanceCharts() {
     try {
-        const res = await fetch('/api/close_order', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol: symbol, order_id: id, side: side, amount: amount })
-        });
-        const data = await res.json();
-        if (res.ok) {
-            alert(data.message);
-            dataCache = {};
-            loadGlobalOrders(); 
-            loadHome(); 
-        } else {
-            alert("Error: " + data.detail);
-        }
-    } catch (e) { alert("Error de conexión"); }
-}
-
-// --- FUNCIÓ NOVA: CARREGAR CARTERA SPOT ---
-async function loadWallet() {
-    const tbody = document.getElementById('wallet-table-body');
-    if(!tbody) return;
-    
-    // Spinner
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>';
-    
-    try {
-        const res = await fetch('/api/wallet');
-        const walletData = await res.json();
-        
-        if (walletData.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No se han encontrado activos relevantes.</td></tr>';
-            return;
-        }
-        
-        tbody.innerHTML = walletData.map(item => {
-            const asset = item.asset;
-            const isUSDC = asset === 'USDC' || asset === 'USDT';
-            
-            // Càlcul de valors en USDC
-            const freeVal = item.free * item.price;
-            const lockedVal = item.locked * item.price;
-            
-            // Botó de liquidació (Vendre)
-            let actionBtn = '';
-            if (!isUSDC) {
-                actionBtn = `
-                    <button class="btn btn-sm btn-outline-danger" title="Cancelar órdenes y vender a mercado" onclick="liquidateAsset('${asset}')">
-                        <i class="fa-solid fa-money-bill-transfer me-1"></i> Vender
-                    </button>
-                `;
-            } else {
-                actionBtn = '<span class="text-muted small">Base</span>';
-            }
-            
-            // Estils
-            const lockedClass = item.locked > 0 ? 'text-danger fw-bold' : 'text-muted';
-            
-            return `
-                <tr>
-                    <td class="fw-bold">${asset}</td>
-                    <td>${fmtCrypto(item.free)} <span class="text-muted small">(${fmtUSDC(freeVal)} $)</span></td>
-                    <td class="${lockedClass}">${fmtCrypto(item.locked)} <span class="text-muted small">(${fmtUSDC(lockedVal)} $)</span></td>
-                    <td>${fmtCrypto(item.total)}</td>
-                    <td class="fw-bold">${fmtUSDC(item.usdc_value)} $</td>
-                    <td class="text-end">${actionBtn}</td>
-                </tr>
-            `;
-        }).join('');
-        
-    } catch(e) {
-        console.error("Error carregant cartera:", e);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error de conexión</td></tr>';
-    }
-}
-
-// --- FUNCIÓ NOVA: LIQUIDAR ACTIU ---
-async function liquidateAsset(asset) {
-    if (!confirm(`⚠️ ¿LIQUIDAR POSICIÓN DE ${asset}?\n\n1. Se cancelarán TODAS las órdenes de ${asset}/USDC.\n2. Se venderá TODO el saldo de ${asset} a precio de mercado.\n\n¿Estás seguro?`)) return;
-    
-    try {
-        const res = await fetch('/api/liquidate_asset', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ asset: asset })
-        });
-        
-        const data = await res.json();
-        if (res.ok) {
-            alert(data.message);
-            loadWallet(); // Recarreguem la taula
-        } else {
-            alert("Error: " + data.detail);
-        }
-    } catch(e) {
-        alert("Error de conexión");
-    }
-}
-
-// --- FUNCIÓ NOVA: ESBORRAR HISTÒRIC MONEDA ---
-async function clearHistory(symbol) {
-    if (!confirm(`🗑️ ¿Borrar el historial de operaciones de ${symbol}?\n\nEsta acción NO se puede deshacer. Las órdenes activas NO se verán afectadas.`)) return;
-    
-    try {
-        const res = await fetch('/api/history/clear', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol: symbol })
-        });
-        const data = await res.json();
-        
-        if (res.ok) {
-            alert(data.message);
-            dataCache = {}; // Forçar recàrrega
-            loadSymbol(symbol); // Actualitzar taula
-        } else {
-            alert("Error: " + data.detail);
-        }
-    } catch(e) {
-        alert("Error de conexión");
-    }
-}
-
-// ==========================================
-// 6. FUNCIONS DE CONTROL I INICIALITZACIÓ
-// ==========================================
-
-async function toggleEngine() {
-    const btn = document.getElementById('btn-engine-toggle');
-    const isTurningOn = btn.classList.contains('btn-success');
-    const action = isTurningOn ? 'ENCENDER' : 'APAGAR';
-    
-    if (!confirm(`¿Seguro que quieres ${action} el motor de trading?`)) return;
-    
-    const endpoint = isTurningOn ? '/api/engine/on' : '/api/engine/off';
-    
-    try {
-        const res = await fetch(endpoint, { method: 'POST' });
-        const data = await res.json();
-        if (res.ok) {
-            alert(data.message);
-            dataCache = {};
-            loadHome();
-        } else {
-            alert("Error: " + data.message);
-        }
-    } catch (e) { alert("Error de conexión"); }
-}
-
-async function resetStatistics() {
-    if (!confirm("⚠️ ATENCIÓN ⚠️\n\n¿Estás seguro de que quieres borrar TODAS las estadísticas?\n\nSe pondrá a cero el PnL, el historial de operaciones y los tiempos de sesión.\nEsta acción no se puede deshacer.")) {
-        return;
-    }
-    try {
-        const res = await fetch('/api/reset_stats', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok) { 
-            alert(data.message); 
-            dataCache = {}; // Cache clear
-            location.reload(); 
-        } else { alert("Error: " + data.detail); }
-    } catch (e) { alert("Error de conexión."); }
-}
-
-async function panicStop() {
-    if (!confirm("✋ ¿PAUSAR EL BOT?\n\nSe detendrá la lógica de trading para TODAS las monedas.\nNo se pondrán nuevas órdenes.")) return;
-    try {
-        const res = await fetch('/api/panic/stop', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok) { 
-            alert(data.message); 
-            dataCache = {}; // Cache clear
-            loadHome(); 
-        } else { alert("Error: " + data.detail); }
-    } catch (e) { alert("Error de conexión."); }
-}
-
-async function panicStart() {
-    try {
-        const res = await fetch('/api/panic/start', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok) { 
-            alert(data.message); 
-            dataCache = {}; // Cache clear
-            loadHome(); 
-        } else { alert("Error: " + data.detail); }
-    } catch (e) { alert("Error de conexión."); }
-}
-
-async function panicCancel() {
-    if (!confirm("🗑️ ¿CANCELAR TODO?\n\nSe borrarán TODAS las órdenes limit abiertas en el Exchange para las monedas activas.")) return;
-    try {
-        const res = await fetch('/api/panic/cancel_all', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok) { 
-            alert(data.message); 
-            dataCache = {}; // Cache clear
-            loadHome(); 
-        } else { alert("Error: " + data.detail); }
-    } catch (e) { alert("Error de conexión."); }
-}
-
-async function panicSell() {
-    if (!confirm("🔥 ¡PELIGRO! ¿VENDER TODO A USDC?\n\n1. Se cancelarán todas las órdenes.\n2. Se venderán todas las criptomonedas activas a precio de mercado.\n\n¿Estás 100% seguro?")) return;
-    try {
-        const res = await fetch('/api/panic/sell_all', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok) { 
-            alert(data.message); 
-            dataCache = {}; // Cache clear
-            loadHome(); 
-        } else { alert("Error: " + data.detail); }
-    } catch (e) { alert("Error de conexión."); }
-}
-
-async function init() {
-    try {
-        const res = await fetch('/api/status');
+        const res = await fetch('/api/history/balance');
         if (!res.ok) return;
         const data = await res.json();
-        
-        if (!initialized && data.active_pairs) {
-            syncTabs(data.active_pairs);
-            initialized = true;
-        }
-        loadHome();
-    } catch (e) { console.error("Error init:", e); }
+        fullGlobalHistory = data.global; 
+        renderLineChart('balanceChartSession', data.session, '#0ecb81');
+        renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); 
+    } catch(e) { console.error("Error loading charts", e); }
 }
 
-// MAIN LOOP
+async function closeOrder(s,i,side,a) { if(confirm("¿Cancelar orden?")) postAction('/api/close_order', {symbol:s, order_id:i, side:side, amount:a}); }
+async function liquidateAsset(a) { if(confirm("¿Liquidar " + a + "?")) postAction('/api/liquidate_asset', {asset:a}, loadWallet); }
+async function clearHistory(s) { if(confirm("¿Borrar historial " + s + "?")) postAction('/api/history/clear', {symbol:s}); }
+async function toggleEngine() { const btn=document.getElementById('btn-engine-toggle'); const action = btn.classList.contains('btn-success') ? 'on' : 'off'; if(confirm("¿Seguro?")) postAction(`/api/engine/${action}`); }
+async function resetStatistics() { if(confirm("¿Reset total?")) postAction('/api/reset_stats', {}, () => location.reload()); }
+async function panicStop() { if(confirm("¿Pausar?")) postAction('/api/panic/stop'); }
+async function panicStart() { postAction('/api/panic/start'); }
+async function panicCancel() { if(confirm("¿Cancelar todo?")) postAction('/api/panic/cancel_all'); }
+async function panicSell() { if(confirm("¿Vender todo?")) postAction('/api/panic/sell_all'); }
+
+async function postAction(url, body={}, cb=null) {
+    try {
+        const res = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        const d = await res.json();
+        if(res.ok) { alert(d.message); if(cb) cb(); else { dataCache={}; loadHome(); } }
+        else alert("Error: " + d.detail);
+    } catch(e) { alert("Error conexión"); }
+}
+
+// Loop principal
 init();
-setInterval(() => { 
-    if (currentMode === 'home') { 
-        loadHome(); 
-        loadBalanceCharts(); 
-    } else if (currentMode !== 'config') { 
-        // Si estem a la cartera, no cal refrescar cada 4 segons la taula
-        // només els preus si ho volguéssim, però millor manual per no saturar
-        if (currentMode !== 'wallet') {
-            loadSymbol(currentMode);
-        }
-    } 
+setInterval(() => {
+    if(currentMode === 'home') { loadHome(); loadBalanceCharts(); }
+    else if(currentMode !== 'config' && currentMode !== 'wallet') loadSymbol(currentMode);
 }, 4000);
