@@ -108,8 +108,8 @@ function ensureTabExists(symbol) {
     li.className = 'nav-item';
     li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
     
-    const configTabLi = document.getElementById('tab-config').parentElement;
-    tabList.insertBefore(li, configTabLi);
+    // MODIFICACIÓ: Inserim al final de la llista (appendChild) enlloc de davant de config
+    tabList.appendChild(li);
 
     const div = document.createElement('div');
     div.className = 'tab-pane fade';
@@ -306,16 +306,13 @@ async function loadConfigForm() {
                 </div>`;
             container.innerHTML += html;
             
-            // Cridem a l'anàlisi de RSI en segon pla
             setTimeout(() => analyzeSymbol(pair.symbol, index, profile), 500 + (index * 200));
         });
     } catch (e) { console.error(e); alert("Error leyendo la configuración."); }
 }
 
-// --- FUNCIÓ MODIFICADA PER MILLORAR SELECTOR ---
 async function analyzeSymbol(symbol, index, currentProfile) {
     try {
-        // Recuperem de cache o posem 4h per defecte
         const savedTf = rsiTimeframeCache[index] || '4h';
         
         const res = await fetch(`/api/strategy/analyze/${encodeURIComponent(symbol)}?timeframe=${savedTf}&_=${Date.now()}`);
@@ -331,13 +328,11 @@ async function analyzeSymbol(symbol, index, currentProfile) {
         else if (data.rsi > 65) rsiColor = 'text-danger fw-bold';
         else rsiColor = 'text-primary';
         
-        // Classes per als botons
         const btnCons = currentProfile === 'conservative' ? 'btn-success' : 'btn-outline-dark';
         const btnMod = currentProfile === 'moderate' ? 'btn-primary' : 'btn-outline-dark';
         const btnAgg = currentProfile === 'aggressive' ? 'btn-danger' : 'btn-outline-dark';
         const btnMan = currentProfile === 'manual' ? 'btn-secondary' : 'btn-outline-dark';
         
-        // --- NOU DISSENY DEL SELECTOR (BOTONS PETITS) ---
         const btn15m = savedTf === '15m' ? 'btn-secondary active' : 'btn-outline-secondary';
         const btn1h = savedTf === '1h' ? 'btn-secondary active' : 'btn-outline-secondary';
         const btn4h = savedTf === '4h' ? 'btn-secondary active' : 'btn-outline-secondary';
@@ -364,7 +359,6 @@ async function analyzeSymbol(symbol, index, currentProfile) {
     } catch (e) { console.error("Error RSI", e); }
 }
 
-// Nova funció per gestionar el canvi de timeframe
 function changeRsiTf(symbol, index, profile, tf) {
     rsiTimeframeCache[index] = tf;
     analyzeSymbol(symbol, index, profile);
