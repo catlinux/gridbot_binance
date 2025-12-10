@@ -14,7 +14,7 @@ let fullGlobalHistory = [];
 let dataCache = {}; 
 // CACHE PER ESTRATÈGIES
 let strategyCache = {};
-// CACHE PER TIMEFRAME RSI (Per recordar què has triat a cada moneda)
+// CACHE PER TIMEFRAME RSI
 let rsiTimeframeCache = {};
 
 // ==========================================
@@ -66,37 +66,6 @@ const updateColorValue = (elementId, value, suffix = '') => {
     else el.classList.add('text-danger');
 };
 
-
-// ==========================================
-// 3. GESTIÓ DE LA UI
-// ==========================================
-
-function setMode(mode) {
-    currentMode = mode;
-    dataCache = {}; 
-    
-    if (mode === 'home') loadHome();
-    else if (mode === 'wallet') loadWallet();
-    else if (mode !== 'config') loadSymbol(mode);
-    
-    if (mode !== 'home' && mode !== 'config' && mode !== 'wallet') {
-        setTimeout(() => {
-            const safe = mode.replace('/', '_');
-            if (charts[safe]) charts[safe].resize();
-        }, 200);
-    }
-}
-
-function setTimeframe(tf) {
-    currentTimeframe = tf;
-    dataCache = {}; 
-    document.querySelectorAll('.tf-btn').forEach(btn => { 
-        btn.classList.remove('active'); 
-        if(btn.innerText.toLowerCase() === tf) btn.classList.add('active'); 
-    });
-    if (currentMode !== 'home' && currentMode !== 'config' && currentMode !== 'wallet') loadSymbol(currentMode);
-}
-
 function ensureTabExists(symbol) {
     const safe = symbol.replace('/', '_');
     const tabList = document.getElementById('mainTabs');
@@ -108,7 +77,7 @@ function ensureTabExists(symbol) {
     li.className = 'nav-item';
     li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
     
-    // MODIFICACIÓ: Inserim al final de la llista (appendChild) enlloc de davant de config
+    // Inserim al final
     tabList.appendChild(li);
 
     const div = document.createElement('div');
@@ -194,6 +163,36 @@ function syncTabs(activePairs) {
     activePairs.forEach(sym => {
         ensureTabExists(sym);
     });
+}
+
+// ==========================================
+// 3. GESTIÓ DE LA UI
+// ==========================================
+
+function setMode(mode) {
+    currentMode = mode;
+    dataCache = {}; 
+    
+    if (mode === 'home') loadHome();
+    else if (mode === 'wallet') loadWallet();
+    else if (mode !== 'config') loadSymbol(mode);
+    
+    if (mode !== 'home' && mode !== 'config' && mode !== 'wallet') {
+        setTimeout(() => {
+            const safe = mode.replace('/', '_');
+            if (charts[safe]) charts[safe].resize();
+        }, 200);
+    }
+}
+
+function setTimeframe(tf) {
+    currentTimeframe = tf;
+    dataCache = {}; 
+    document.querySelectorAll('.tf-btn').forEach(btn => { 
+        btn.classList.remove('active'); 
+        if(btn.innerText.toLowerCase() === tf) btn.classList.add('active'); 
+    });
+    if (currentMode !== 'home' && currentMode !== 'config' && currentMode !== 'wallet') loadSymbol(currentMode);
 }
 
 // --- CONFIG FORM ---
@@ -313,9 +312,12 @@ async function loadConfigForm() {
 
 async function analyzeSymbol(symbol, index, currentProfile) {
     try {
+        const tfSelect = document.getElementById(`rsi-tf-${index}`);
         const savedTf = rsiTimeframeCache[index] || '4h';
         
-        const res = await fetch(`/api/strategy/analyze/${encodeURIComponent(symbol)}?timeframe=${savedTf}&_=${Date.now()}`);
+        // MODIFICACIÓ CLAU: Barra '/' final per evitar redirect 307
+        const res = await fetch(`/api/strategy/analyze/?symbol=${encodeURIComponent(symbol)}&timeframe=${savedTf}&_=${Date.now()}`);
+        if (!res.ok) throw new Error("API Error");
         const data = await res.json();
         
         strategyCache[index] = data;
@@ -356,7 +358,11 @@ async function analyzeSymbol(symbol, index, currentProfile) {
                Estrategia: <strong>${currentProfile ? currentProfile.toUpperCase() : 'MANUAL'}</strong>
             </div>
         `;
-    } catch (e) { console.error("Error RSI", e); }
+    } catch (e) { 
+        console.error("Error RSI", e); 
+        const box = document.getElementById(`rsi-box-${index}`);
+        if(box) box.innerHTML = '<small class="text-danger">Error cargando RSI</small>';
+    }
 }
 
 function changeRsiTf(symbol, index, profile, tf) {

@@ -417,7 +417,7 @@ async def clear_history_api(req: ClearHistoryRequest):
                 
     except Exception as e:
         log.error(f"Error calculant smart clear: {e}")
-        raise HTTPException(status_code=500, detail=f"Error preparant neteja: {e}")
+        pass
 
     try:
         count = db.delete_history_smart(symbol, keep_ids)
@@ -426,28 +426,26 @@ async def clear_history_api(req: ClearHistoryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- ENDPOINT ANALISI ESTRATÈGIA (AMB TIMEFRAME) ---
-@app.get("/api/strategy/analyze/{symbol:path}")
+# --- ENDPOINT ANALISI ESTRATÈGIA (AMB BARRA FINAL PER EVITAR REDIRECT) ---
+@app.get("/api/strategy/analyze/")
 async def analyze_strategy(symbol: str, timeframe: str = '4h'):
     try:
-        data = db.get_pair_data(symbol)
-        raw_candles = []
+        rsi = 50.0
         
-        # Intentem baixar dades fresques segons el timeframe demanat
+        raw_candles = []
         if bot_instance and bot_instance.connector.exchange:
             try: 
                 raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=50)
             except: pass
             
         if not raw_candles:
-            raw_candles = data['candles']
-
-        rsi = _calculate_rsi(raw_candles)
+             data = db.get_pair_data(symbol)
+             raw_candles = data['candles']
         
-        # Base de les propostes (per defecte)
+        if raw_candles:
+            rsi = _calculate_rsi(raw_candles)
+        
         base_s = {"conservative": 1.0, "moderate": 0.8, "aggressive": 0.5}
-        
-        # Ajustem la base segons el timeframe (més ràpid = menys spread)
         if timeframe == '15m':
             base_s = {"conservative": 0.6, "moderate": 0.4, "aggressive": 0.25}
         elif timeframe == '1h':
@@ -460,7 +458,6 @@ async def analyze_strategy(symbol: str, timeframe: str = '4h'):
             "aggressive": {"grids": 12, "spread": base_s["aggressive"]}
         }
         
-        # Ajust segons RSI (sobrecompra/sobrevenda)
         if rsi < 35: 
             suggestions["conservative"]["grids"] += 2
             suggestions["conservative"]["spread"] += 0.2
@@ -469,11 +466,10 @@ async def analyze_strategy(symbol: str, timeframe: str = '4h'):
             suggestions["aggressive"]["spread"] -= 0.1
         elif rsi > 65:
             suggestions["conservative"]["grids"] -= 3
-            suggestions["conservative"]["spread"] += 0.5 # Molt ample per esperar caiguda
+            suggestions["conservative"]["spread"] += 0.5 
             suggestions["moderate"]["grids"] -= 2
             suggestions["moderate"]["spread"] += 0.2
             
-        # Arrodoniment final per estètica
         for k in suggestions:
             if k != "rsi":
                 suggestions[k]["spread"] = round(suggestions[k]["spread"], 2)
@@ -481,8 +477,13 @@ async def analyze_strategy(symbol: str, timeframe: str = '4h'):
         return suggestions
     except Exception as e:
         log.error(f"Error analitzant {symbol}: {e}")
-        return {"rsi": 50, "conservative": {}, "moderate": {}, "aggressive": {}}
-# ---------------------------------------------------
+        return {
+            "rsi": 50, 
+            "conservative": {"grids": 8, "spread": 1.0}, 
+            "moderate": {"grids": 10, "spread": 0.8}, 
+            "aggressive": {"grids": 12, "spread": 0.5}
+        }
+# ---------------------------------------------------------------------
 
 @app.post("/api/close_order")
 async def close_order_api(req: CloseOrderRequest):
