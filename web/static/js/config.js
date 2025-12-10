@@ -33,6 +33,7 @@ export async function loadConfigForm() {
             
             const startMode = strategy.start_mode || 'wait';
             const profile = strategy.strategy_profile || 'manual';
+            const trailing = strategy.trailing_enabled === true; 
             
             const html = `
                 <div class="col-md-6 col-xl-4 mb-4">
@@ -58,6 +59,11 @@ export async function loadConfigForm() {
                             <div class="row">
                                 <div class="col-6 mb-3"><label class="form-label">Nº Líneas</label><input type="number" class="form-control" id="qty-${index}" value="${strategy.grids_quantity}" oninput="setManual(${index})"></div>
                                 <div class="col-6 mb-3"><label class="form-label">Spread (%)</label><div class="input-group"><input type="number" class="form-control" id="spread-${index}" value="${strategy.grid_spread}" step="0.1" oninput="setManual(${index})"><span class="input-group-text">%</span></div></div>
+                            </div>
+
+                            <div class="form-check form-switch mb-3 p-2 border rounded bg-white">
+                                <input class="form-check-input ms-0 me-2" type="checkbox" role="switch" id="trailing-${index}" ${trailing ? 'checked' : ''} style="float:none;">
+                                <label class="form-check-label fw-bold small text-primary" for="trailing-${index}"><i class="fa-solid fa-arrow-trend-up me-1"></i> Trailing Up</label>
                             </div>
                             
                             <hr class="text-muted">
@@ -89,7 +95,6 @@ export async function loadConfigForm() {
 export async function analyzeSymbol(symbol, index, currentProfile) {
     try {
         const savedTf = rsiTimeframeCache[index] || '4h';
-        // URL Corregida amb paràmetres
         const res = await fetch(`/api/strategy/analyze/?symbol=${encodeURIComponent(symbol)}&timeframe=${savedTf}&_=${Date.now()}`);
         if (!res.ok) throw new Error("API Error");
         const data = await res.json();
@@ -112,7 +117,6 @@ export async function analyzeSymbol(symbol, index, currentProfile) {
         const btn1h = savedTf === '1h' ? 'btn-secondary active' : 'btn-outline-secondary';
         const btn4h = savedTf === '4h' ? 'btn-secondary active' : 'btn-outline-secondary';
 
-        // HTML AMB BOTONS BTN-SM I ESTIL CORRECTE
         box.innerHTML = `
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="small fw-bold">RSI: <span class="${rsiColor}">${data.rsi}</span></span>
@@ -186,6 +190,7 @@ export async function saveConfigForm() {
         const qty = parseInt(document.getElementById(`qty-${index}`).value);
         const spread = parseFloat(document.getElementById(`spread-${index}`).value);
         const profile = document.getElementById(`profile-${index}`).value;
+        const trailing = document.getElementById(`trailing-${index}`).checked;
         
         let startMode = 'wait';
         if (document.getElementById(`sm-buy1-${index}`).checked) startMode = 'buy_1';
@@ -198,6 +203,7 @@ export async function saveConfigForm() {
         pair.strategy.grid_spread = spread;
         pair.strategy.start_mode = startMode;
         pair.strategy.strategy_profile = profile; 
+        pair.strategy.trailing_enabled = trailing;
     });
 
     const jsonString = JSON.stringify(currentConfigObj, null, 2);

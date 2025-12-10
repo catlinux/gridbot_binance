@@ -1,14 +1,15 @@
 import { fmtUSDC, fmtPrice, fmtInt, fmtCrypto, fmtPct, updateColorValue } from './utils.js';
-import { renderDonut, renderLineChart, renderCandleChart } from './charts.js';
+import { renderDonut, renderLineChart, renderCandleChart, resetChartZoom } from './charts.js';
 import { loadConfigForm, saveConfigForm, toggleCard, changeRsiTf, applyStrategy, setManual, analyzeSymbol } from './config.js';
 
 // --- ESTAT GLOBAL ---
 let currentMode = 'home';
 let currentTimeframe = '15m';
+let currentChartType = 'candles'; // Nou estat per al tipus de gràfic
 let dataCache = {}; 
 let fullGlobalHistory = []; 
 
-// --- EXPORTAR A WINDOW (Perquè els onlick de l'HTML funcionin) ---
+// --- EXPORTAR A WINDOW ---
 window.loadConfigForm = loadConfigForm;
 window.saveConfigForm = saveConfigForm;
 window.toggleCard = toggleCard;
@@ -17,6 +18,8 @@ window.applyStrategy = applyStrategy;
 window.setManual = setManual;
 window.setMode = setMode;
 window.setTimeframe = setTimeframe;
+window.setChartType = setChartType;
+window.resetZoom = resetZoom; // Nova funció
 window.loadWallet = loadWallet;
 window.resetStatistics = resetStatistics;
 window.panicStop = panicStop;
@@ -60,7 +63,6 @@ function ensureTabExists(symbol) {
     const safe = symbol.replace('/', '_');
     if (document.getElementById(`content-${safe}`)) return;
     
-    // CORRECCIÓ 1: Definir tabList
     const tabList = document.getElementById('mainTabs');
     
     const li = document.createElement('li');
@@ -68,6 +70,9 @@ function ensureTabExists(symbol) {
     li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
     
     tabList.appendChild(li);
+
+    const btnCandlesActive = currentChartType === 'candles' ? 'active' : '';
+    const btnLineActive = currentChartType === 'line' ? 'active' : '';
 
     const div = document.createElement('div');
     div.className = 'tab-pane fade';
@@ -78,14 +83,19 @@ function ensureTabExists(symbol) {
                 <div class="card h-100">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center">
-                            <span>Gráfico</span>
-                            <div class="btn-group ms-3">
+                            <span class="d-none d-sm-inline me-2">Gráfico</span>
+                            <div class="btn-group me-2">
                                 <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('1m')">1m</button>
                                 <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('5m')">5m</button>
                                 <button class="btn btn-outline-secondary btn-sm tf-btn active" onclick="setTimeframe('15m')">15m</button>
                                 <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('1h')">1h</button>
                                 <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('4h')">4h</button>
                             </div>
+                            <div class="btn-group">
+                                <button class="btn btn-outline-secondary btn-sm ${btnCandlesActive}" data-chart-type="candles" onclick="setChartType('candles')" title="Velas"><i class="fa-solid fa-chart-simple"></i></button>
+                                <button class="btn btn-outline-secondary btn-sm ${btnLineActive}" data-chart-type="line" onclick="setChartType('line')" title="Línea"><i class="fa-solid fa-chart-line"></i></button>
+                            </div>
+                            <button class="btn btn-outline-secondary btn-sm ms-2" onclick="resetZoom('${symbol}')" title="Reset Zoom (Últimas 100)"><i class="fa-solid fa-compress"></i></button>
                         </div>
                         <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
                     </div>
@@ -134,6 +144,24 @@ function setTimeframe(tf) {
     currentTimeframe = tf;
     document.querySelectorAll('.tf-btn').forEach(b => { b.classList.remove('active'); if(b.innerText.toLowerCase()===tf) b.classList.add('active'); });
     if(currentMode!=='home' && currentMode!=='config' && currentMode!=='wallet') loadSymbol(currentMode);
+}
+
+function setChartType(type) {
+    currentChartType = type;
+    document.querySelectorAll('button[data-chart-type]').forEach(btn => {
+        btn.classList.remove('active');
+        if(btn.getAttribute('data-chart-type') === type) {
+            btn.classList.add('active');
+        }
+    });
+    if(currentMode!=='home' && currentMode!=='config' && currentMode!=='wallet') loadSymbol(currentMode);
+}
+
+// Funció que es crida des del botó
+function resetZoom(symbol) {
+    const safe = symbol.replace('/', '_');
+    resetChartZoom(safe); // Posa la bandera a false
+    loadSymbol(symbol); // Força el repintat immediat
 }
 
 // --- LOADERS ---
@@ -199,7 +227,8 @@ async function loadSymbol(symbol) {
         const data = await res.json();
         
         document.getElementById(`price-${safe}`).innerText = `${fmtPrice(data.price)} USDC`;
-        renderCandleChart(safe, data.chart_data, data.grid_lines, data.open_orders);
+        
+        renderCandleChart(safe, data.chart_data, data.grid_lines, data.open_orders, currentChartType);
         
         document.getElementById(`count-buy-${safe}`).innerText = data.open_orders.filter(o => o.side === 'buy').length;
         document.getElementById(`count-sell-${safe}`).innerText = data.open_orders.filter(o => o.side === 'sell').length;
@@ -252,7 +281,6 @@ async function loadGlobalOrders() {
     } catch(e) {}
 }
 
-// CORRECCIÓ 2: La funció que faltava
 async function loadBalanceCharts() {
     try {
         const res = await fetch('/api/history/balance');

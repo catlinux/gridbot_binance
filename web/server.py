@@ -99,11 +99,11 @@ def format_uptime(seconds):
     return f"{hours}h {mins}m"
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
+def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/api/status")
-async def get_status():
+def get_status():
     if not bot_instance: return {"status": "Offline"}
     
     try:
@@ -248,7 +248,7 @@ async def get_status():
         }
 
 @app.get("/api/history/balance")
-async def get_balance_history_api():
+def get_balance_history_api():
     try:
         full_hist = db.get_balance_history(from_timestamp=0)
         session_start = bot_instance.global_start_time if bot_instance else 0
@@ -264,7 +264,7 @@ async def get_balance_history_api():
     except: return {"global": [], "session": []}
 
 @app.get("/api/orders")
-async def get_all_orders():
+def get_all_orders():
     try:
         raw_orders = db.get_all_active_orders()
         prices = db.get_all_prices()
@@ -299,7 +299,7 @@ async def get_all_orders():
     except: return []
 
 @app.get("/api/wallet")
-async def get_wallet_data():
+def get_wallet_data():
     if not bot_instance or not bot_instance.connector.exchange:
         return []
     
@@ -350,7 +350,7 @@ async def get_wallet_data():
         return []
 
 @app.post("/api/liquidate_asset")
-async def liquidate_asset_api(req: LiquidateRequest):
+def liquidate_asset_api(req: LiquidateRequest):
     if not bot_instance or not bot_instance.connector.exchange:
         raise HTTPException(status_code=503, detail="Bot no conectado")
     
@@ -386,7 +386,7 @@ async def liquidate_asset_api(req: LiquidateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/history/clear")
-async def clear_history_api(req: ClearHistoryRequest):
+def clear_history_api(req: ClearHistoryRequest):
     symbol = req.symbol
     keep_ids = []
     
@@ -426,31 +426,27 @@ async def clear_history_api(req: ClearHistoryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- ENDPOINT ANALISI ESTRATÈGIA (CORREGIT: FORÇA CONNEXIÓ) ---
+# --- ENDPOINT ANALISI ESTRATÈGIA ---
 @app.get("/api/strategy/analyze/")
-async def analyze_strategy(symbol: str, timeframe: str = '4h'):
+def analyze_strategy(symbol: str, timeframe: str = '4h'):
     try:
         rsi = 50.0
         
-        # --- MODIFICACIÓ: FORÇAR INICIALITZACIÓ SI CAL ---
         if bot_instance:
             if not bot_instance.connector.exchange:
-                # Si l'exchange està "adormit" (None), el despertem per força
-                # perquè necessitem dades reals per l'RSI
                 try:
                     bot_instance.connector.check_and_reload_config()
                 except: pass
-        # -------------------------------------------------
-
+        
         raw_candles = []
         if bot_instance and bot_instance.connector.exchange:
             try: 
-                raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=50)
+                # --- CANVI: 1000 ESPELMES ---
+                raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=1000)
             except: pass
             
         if not raw_candles:
              data = db.get_pair_data(symbol)
-             # Fallback a DB (probablement 15m), però millor que error
              raw_candles = data['candles']
         
         if raw_candles:
@@ -497,19 +493,20 @@ async def analyze_strategy(symbol: str, timeframe: str = '4h'):
 # -------------------------------------------------------------
 
 @app.post("/api/close_order")
-async def close_order_api(req: CloseOrderRequest):
+def close_order_api(req: CloseOrderRequest):
     if not bot_instance: raise HTTPException(status_code=503, detail="Bot no inicializado")
     success = bot_instance.manual_close_order(req.symbol, req.order_id, req.side, req.amount)
     if success: return {"status": "success", "message": "Orden cerrada."}
     else: raise HTTPException(status_code=400, detail="Error cerrando orden.")
 
 @app.get("/api/details/{symbol:path}")
-async def get_pair_details(symbol: str, timeframe: str = '15m'):
+def get_pair_details(symbol: str, timeframe: str = '15m'):
     try:
         data = db.get_pair_data(symbol)
         raw_candles = []
         if bot_instance and bot_instance.is_running:
-            try: raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=100)
+            # --- CANVI: 1000 ESPELMES ---
+            try: raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=1000)
             except: pass
         if not raw_candles: raw_candles = data['candles']
         
@@ -564,14 +561,14 @@ async def get_pair_details(symbol: str, timeframe: str = '15m'):
         return {"symbol": symbol, "price": 0, "open_orders": [], "trades": [], "chart_data": [], "grid_lines": [], "session_pnl": 0, "global_pnl": 0}
 
 @app.get("/api/config")
-async def get_config():
+def get_config():
     try:
         with open('config/config.json5', 'r') as f: content = f.read()
         return {"content": content}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/config")
-async def save_config(config: ConfigUpdate):
+def save_config(config: ConfigUpdate):
     try:
         json5.loads(config.content)
         with open('config/config.json5', 'w') as f: f.write(config.content)
@@ -587,7 +584,7 @@ async def save_config(config: ConfigUpdate):
     except Exception as e: raise HTTPException(status_code=400, detail=f"Error JSON5: {e}")
 
 @app.post("/api/reset_stats")
-async def reset_stats_api():
+def reset_stats_api():
     try:
         db.reset_all_statistics()
         if bot_instance:
@@ -601,35 +598,35 @@ async def reset_stats_api():
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/panic/stop")
-async def panic_stop_api():
+def panic_stop_api():
     if bot_instance:
         bot_instance.panic_stop() 
         return {"status": "success", "message": "Bot PAUSADO."}
     return {"status": "error", "detail": "Bot no iniciado"}
 
 @app.post("/api/panic/start")
-async def panic_start_api():
+def panic_start_api():
     if bot_instance:
         bot_instance.resume_bot()
         return {"status": "success", "message": "Bot REANUDADO."}
     return {"status": "error", "detail": "Bot no iniciado"}
 
 @app.post("/api/panic/cancel_all")
-async def panic_cancel_all_api():
+def panic_cancel_all_api():
     if bot_instance:
         bot_instance.panic_cancel_all()
         return {"status": "success", "message": "Órdenes canceladas."}
     return {"status": "error", "detail": "Bot no iniciado"}
 
 @app.post("/api/panic/sell_all")
-async def panic_sell_all_api():
+def panic_sell_all_api():
     if bot_instance:
         bot_instance.panic_sell_all()
         return {"status": "success", "message": "Venta pánico ejecutada."}
     return {"status": "error", "detail": "Bot no iniciado"}
 
 @app.post("/api/engine/on")
-async def engine_on_api():
+def engine_on_api():
     if bot_instance:
         if bot_instance.launch():
             return {"status": "success", "message": "Motor de trading ARRANCADO."}
@@ -638,7 +635,7 @@ async def engine_on_api():
     return {"status": "error", "detail": "Error interno"}
 
 @app.post("/api/engine/off")
-async def engine_off_api():
+def engine_off_api():
     if bot_instance:
         bot_instance.stop_logic()
         return {"status": "success", "message": "Motor de trading APAGADO."}

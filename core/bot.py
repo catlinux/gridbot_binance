@@ -117,8 +117,8 @@ class GridBot:
             for symbol in current_pairs:
                 try:
                     price = self.connector.fetch_current_price(symbol)
-                    # Demanem més espelmes per calcular RSI si cal
-                    candles = self.connector.fetch_candles(symbol, limit=100) 
+                    # --- CANVI: 1000 ESPELMES ---
+                    candles = self.connector.fetch_candles(symbol, limit=1000) 
                     self.db.update_market_snapshot(symbol, price, candles)
 
                     open_orders = self.connector.fetch_open_orders(symbol) or []
@@ -313,6 +313,46 @@ class GridBot:
             self.levels[symbol] = self._generate_fixed_levels(symbol, current_price)
 
         my_levels = self.levels[symbol]
+        
+        # --- LÒGICA TRAILING UP ---
+        if params.get('trailing_enabled', False) and my_levels:
+             my_levels.sort()
+             max_level = my_levels[-1]
+             spread_val = params['grid_spread'] / 100
+             
+             # Activem el moviment si el preu supera el màxim en un 20% de l'spread aprox (buffer)
+             trigger_price = max_level * (1 + (spread_val * 0.2))
+             
+             if current_price > trigger_price:
+                 log.warning(f"🚀 TRAILING UP: {symbol} ha roto techo ({max_level}). Moviendo rejilla...")
+                 
+                 # 1. Eliminem el nivell inferior
+                 lowest_level = my_levels.pop(0)
+                 
+                 # 2. Cancel·lem l'ordre que estava en aquest nivell (sol ser una COMPRA "buy")
+                 # Busquem quina ordre correspon a aquest preu
+                 for o in open_orders:
+                     if math.isclose(o['price'], lowest_level, rel_tol=1e-5):
+                         log.info(f"🗑️ Cancelando orden inferior {o['id']} ({lowest_level}) para liberar grid.")
+                         self.connector.cancel_order(o['id'], symbol)
+                         break
+                 
+                 # 3. Creem un nou nivell superior
+                 new_top = max_level * (1 + spread_val)
+                 try:
+                    p_str = self.connector.exchange.price_to_precision(symbol, new_top)
+                    new_top = float(p_str)
+                 except: pass
+                 
+                 my_levels.append(new_top)
+                 self.levels[symbol] = sorted(my_levels)
+                 
+                 send_msg(f"🧗 <b>TRAILING UP {symbol}</b>\nEl precio ha subido. Grid desplazado hacia arriba.\nNuevo techo: {new_top}")
+                 
+                 # Retornem per deixar que el següent cicle col·loqui les ordres noves netes
+                 return 
+        # --------------------------
+
         base_asset, quote_asset = symbol.split('/')
         spread_val = params['grid_spread'] / 100
         margin = current_price * (spread_val * 0.1) 
