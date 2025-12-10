@@ -2,19 +2,22 @@
 import sqlite3
 import json
 import time
+import os
 from utils.logger import log
 
-DB_PATH = "bot_data.db"
+DB_FOLDER = "data"
+DB_NAME = "bot_data.db"
+DB_PATH = os.path.join(DB_FOLDER, DB_NAME)
 
 class BotDatabase:
     def __init__(self):
-        # --- CONNEXIÓ PERSISTENT ---
-        # Ara obrim la connexió al principi i la guardem a self.conn
+        if not os.path.exists(DB_FOLDER):
+            os.makedirs(DB_FOLDER)
+
         self.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         self._init_db()
 
     def _init_db(self):
-        # Utilitzem la connexió persistent
         cursor = self.conn.cursor()
         
         try:
@@ -25,6 +28,11 @@ class BotDatabase:
         cursor.execute('''CREATE TABLE IF NOT EXISTS market_data (symbol TEXT PRIMARY KEY, price REAL, candles_json TEXT, updated_at REAL)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS grid_status (symbol TEXT PRIMARY KEY, open_orders_json TEXT, grid_levels_json TEXT, updated_at REAL)''')
         
+        try:
+            cursor.execute("ALTER TABLE grid_status ADD COLUMN setup_done BOOLEAN DEFAULT 0")
+        except: 
+            pass 
+
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS trade_history (
                 id TEXT PRIMARY KEY,
@@ -62,17 +70,14 @@ class BotDatabase:
             cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', str(time.time())))
 
         self.conn.commit()
-        # Nota: NO tanquem la connexió aquí (ni a cap funció)
 
     def get_next_buy_id(self):
         cursor = self.conn.cursor()
-        
         cursor.execute("SELECT value FROM bot_info WHERE key='next_buy_id'")
         row = cursor.fetchone()
         current_id = int(row[0]) if row else 1
         
         assigned_id = current_id
-        
         next_id = current_id + 1
         if next_id > 500: next_id = 1
         
@@ -177,8 +182,27 @@ class BotDatabase:
 
     def update_grid_status(self, symbol, orders, levels):
         cursor = self.conn.cursor()
-        cursor.execute('''INSERT OR REPLACE INTO grid_status (symbol, open_orders_json, grid_levels_json, updated_at) VALUES (?, ?, ?, ?)''', (symbol, json.dumps(orders), json.dumps(levels), time.time()))
+        cursor.execute("SELECT setup_done FROM grid_status WHERE symbol=?", (symbol,))
+        row = cursor.fetchone()
+        setup_val = row[0] if row else 0
+        
+        cursor.execute('''INSERT OR REPLACE INTO grid_status (symbol, open_orders_json, grid_levels_json, updated_at, setup_done) VALUES (?, ?, ?, ?, ?)''', (symbol, json.dumps(orders), json.dumps(levels), time.time(), setup_val))
         self.conn.commit()
+
+    def set_symbol_setup_done(self, symbol, status=True):
+        cursor = self.conn.cursor()
+        val = 1 if status else 0
+        cursor.execute("UPDATE grid_status SET setup_done=? WHERE symbol=?", (val, symbol))
+        if cursor.rowcount == 0:
+             cursor.execute("INSERT INTO grid_status (symbol, setup_done, updated_at) VALUES (?, ?, ?)", (symbol, val, time.time()))
+        self.conn.commit()
+
+    def get_symbol_setup_done(self, symbol):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT setup_done FROM grid_status WHERE symbol=?", (symbol,))
+        row = cursor.fetchone()
+        if row: return bool(row[0])
+        return False
 
     def save_trades(self, trades):
         if not trades: return
@@ -211,24 +235,40 @@ class BotDatabase:
         self.conn.commit()
 
     def get_pair_data(self, symbol):
-        # Per a row_factory necessitem un cursor nou o configurar-ho a nivell de connexió
-        # Per seguretat ho fem temporalment aquí o configurem la connexió globalment
-        self.conn.row_factory = sqlite3.Row 
+        # Recuperació robusta
         cursor = self.conn.cursor()
         
         cursor.execute("SELECT * FROM market_data WHERE symbol=?", (symbol,))
-        market = cursor.fetchone()
+        market_row = cursor.fetchone()
+        market = {}
+        if market_row:
+            cols = [d[0] for d in cursor.description]
+            market = dict(zip(cols, market_row))
+
         cursor.execute("SELECT * FROM grid_status WHERE symbol=?", (symbol,))
-        grid = cursor.fetchone()
+        grid_row = cursor.fetchone()
+        grid = {}
+        if grid_row:
+            cols = [d[0] for d in cursor.description]
+            grid = dict(zip(cols, grid_row))
+
         cursor.execute("SELECT * FROM trade_history WHERE symbol=? ORDER BY timestamp DESC LIMIT 50", (symbol,))
-        trades = cursor.fetchall()
+        trades_rows = cursor.fetchall()
+        trades = []
+        if trades_rows:
+            cols = [d[0] for d in cursor.description]
+            for row in trades_rows:
+                t_dict = dict(zip(cols, row))
+                # Assegurem que buy_id sigui un valor o null
+                if 'buy_id' not in t_dict: t_dict['buy_id'] = None
+                trades.append(t_dict)
         
         return {
-            "price": market['price'] if market else 0.0,
-            "candles": json.loads(market['candles_json']) if market and market['candles_json'] else [],
-            "open_orders": json.loads(grid['open_orders_json']) if grid and grid['open_orders_json'] else [],
-            "grid_levels": json.loads(grid['grid_levels_json']) if grid and grid['grid_levels_json'] else [],
-            "trades": [dict(row) for row in trades]
+            "price": market.get('price', 0.0),
+            "candles": json.loads(market.get('candles_json', '[]')) if market.get('candles_json') else [],
+            "open_orders": json.loads(grid.get('open_orders_json', '[]')) if grid.get('open_orders_json') else [],
+            "grid_levels": json.loads(grid.get('grid_levels_json', '[]')) if grid.get('grid_levels_json') else [],
+            "trades": trades
         }
 
     def get_all_prices(self):
@@ -311,6 +351,8 @@ class BotDatabase:
         cursor.execute("DELETE FROM trade_history")
         cursor.execute("DELETE FROM market_data")
         cursor.execute("DELETE FROM balance_history")
+        cursor.execute("UPDATE grid_status SET setup_done=0")
+        
         now = str(time.time())
         cursor.execute("DELETE FROM bot_info WHERE key IN ('first_run', 'global_start_balance', 'session_start_balance', 'coins_initial_equity', 'next_buy_id')")
         cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', now))
@@ -323,7 +365,6 @@ class BotDatabase:
         cutoff_ms = cutoff * 1000
         
         cursor = self.conn.cursor()
-        
         cursor.execute("DELETE FROM trade_history WHERE timestamp < ?", (cutoff_ms,))
         deleted_trades = cursor.rowcount
         
@@ -338,7 +379,6 @@ class BotDatabase:
 
     def assign_id_to_trade_if_missing(self, trade_id):
         cursor = self.conn.cursor()
-        
         cursor.execute("SELECT buy_id FROM trade_history WHERE id=?", (trade_id,))
         row = cursor.fetchone()
         
@@ -366,7 +406,6 @@ class BotDatabase:
 
     def delete_history_smart(self, symbol, keep_uuids):
         cursor = self.conn.cursor()
-        
         if not keep_uuids:
             cursor.execute("DELETE FROM trade_history WHERE symbol=?", (symbol,))
         else:
@@ -374,7 +413,6 @@ class BotDatabase:
             sql = f"DELETE FROM trade_history WHERE symbol=? AND id NOT IN ({placeholders})"
             params = [symbol] + keep_uuids
             cursor.execute(sql, params)
-            
         count = cursor.rowcount
         self.conn.commit()
         return count

@@ -38,6 +38,36 @@ class GridBot:
         self.pairs_map = {p['symbol']: p for p in self.config['pairs'] if p['enabled']}
         self.active_pairs = list(self.pairs_map.keys())
 
+    # --- FUNCIÓ NOVA: CÀLCUL RSI MANUAL (sense llibreries) ---
+    def _calculate_rsi(self, candles, period=14):
+        # candles és una llista [[time, open, high, low, close], ...]
+        if not candles or len(candles) < period + 1:
+            return 50.0 # Valor neutre si no hi ha dades
+        
+        closes = [float(c[4]) for c in candles]
+        # Necessitem els canvis de preu
+        deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+        
+        gains = [d if d > 0 else 0 for d in deltas]
+        losses = [-d if d < 0 else 0 for d in deltas]
+        
+        # Mitjana inicial simple
+        avg_gain = sum(gains[:period]) / period
+        avg_loss = sum(losses[:period]) / period
+        
+        # Suavitzat (Wilder's Smoothing)
+        for i in range(period, len(deltas)):
+            avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+            avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+            
+        if avg_loss == 0:
+            return 100.0
+        
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        return round(rsi, 2)
+    # ---------------------------------------------------------
+
     def _data_collector_loop(self):
         last_balance_log = 0
         while self.is_running:
@@ -87,7 +117,8 @@ class GridBot:
             for symbol in current_pairs:
                 try:
                     price = self.connector.fetch_current_price(symbol)
-                    candles = self.connector.fetch_candles(symbol, limit=100)
+                    # Demanem més espelmes per calcular RSI si cal
+                    candles = self.connector.fetch_candles(symbol, limit=100) 
                     self.db.update_market_snapshot(symbol, price, candles)
 
                     open_orders = self.connector.fetch_open_orders(symbol) or []
@@ -122,11 +153,11 @@ class GridBot:
             tid = t['id']
             side = t['side'].upper()
             
-            # --- ASSEGURAR ID SEMPRE (Encara que sigui trade antic) ---
+            # --- ASSEGURAR ID SEMPRE ---
             buy_id_assigned = None
             if side == 'BUY':
                  buy_id_assigned = self.db.assign_id_to_trade_if_missing(tid)
-            # ---------------------------------------------------------
+            # ---------------------------
 
             if tid in self.processed_trade_ids: continue
             
@@ -150,7 +181,6 @@ class GridBot:
             msg = ""
             
             if side == 'BUY':
-                # Fem servir l'ID que hem assegurat abans
                 header_id = f"(ID #{buy_id_assigned})" if buy_id_assigned else ""
                 
                 if self.session_trades_count[symbol] == 1:
@@ -233,13 +263,38 @@ class GridBot:
         params = self._get_params(symbol)
         base_asset = symbol.split('/')[0]
         balance_base = self.connector.get_total_balance(base_asset)
+        amount_buy_usdc = params['amount_per_grid']
         
-        # --- COMPRA INICIAL ---
+        # --- LÒGICA D'ARRENCADA (START MODE) ---
+        if not self.db.get_symbol_setup_done(symbol):
+            mode = params.get('start_mode', 'wait')
+            
+            if mode == 'buy_1' or mode == 'buy_2':
+                multiplier = 2 if mode == 'buy_2' else 1
+                total_invest = amount_buy_usdc * multiplier
+                log.warning(f"🚀 ARRANQUE {mode.upper()}: Comprando {total_invest} USDC de {symbol}...")
+                
+                # Executar compra a mercat
+                buy_order = self.connector.place_market_buy(symbol, total_invest)
+                
+                if buy_order:
+                    log.success(f"✅ Compra inicial ({mode}) ejecutada.")
+                    send_msg(f"🚀 <b>ARRANQUE RÁPIDO ({mode.upper()})</b>\nCompra a mercado ejecutada en {symbol}.")
+                    # Esperem una mica perquè l'Exchange processi
+                    time.sleep(2)
+                else:
+                    log.error(f"❌ Falló la compra inicial de {symbol}.")
+            
+            # Marquem com a fet perquè no ho repeteixi mai més
+            self.db.set_symbol_setup_done(symbol, True)
+            return # Tornem per regenerar la graella al següent cicle
+        # ---------------------------------------
+        
+        # --- COMPRA INICIAL DE SEGURETAT (Si no hi ha saldo) ---
         value_held = balance_base * current_price
         
         if value_held < 5.0:
             log.warning(f"⚠️ {symbol}: Sin inventario ({value_held:.2f} $). Ejecutando COMPRA INICIAL...")
-            amount_buy_usdc = params['amount_per_grid']
             
             usdc_balance = self.connector.get_asset_balance('USDC')
             if usdc_balance > amount_buy_usdc:
@@ -316,7 +371,6 @@ class GridBot:
         if old_testnet != new_testnet:
             network_name = "TESTNET" if new_testnet else "REAL"
             log.warning(f"🚨 CAMBIO DE RED DETECTADO A: {network_name}. Reiniciando sistema...")
-            # TRADUCCIÓ: Canvi de xarxa
             send_msg(f"🔄 <b>CAMBIO DE RED</b>\nEl bot ha pasado a modo: <b>{network_name}</b>")
             
             self.levels = {}
@@ -349,7 +403,6 @@ class GridBot:
         for symbol in added: log.success(f"✨ Activando {symbol}.")
         
         log.info("✅ Recarga completada.")
-        # TRADUCCIÓ: Config actualitzada
         send_msg("⚙️ <b>CONFIGURACIÓN ACTUALIZADA</b>\nNuevos parámetros aplicados.")
 
     def manual_close_order(self, symbol, order_id, side, amount):
@@ -358,7 +411,6 @@ class GridBot:
         res = self.connector.cancel_order(order_id, symbol)
         if side == 'buy':
             log.success(f"Orden {order_id} cancelada. USDC recuperados.")
-            # TRADUCCIÓ: Ordre cancel·lada manualment
             send_msg(f"🗑️ <b>ORDEN CANCELADA (Manual)</b>\n{symbol} - {side}")
             return True
         elif side == 'sell':
@@ -366,7 +418,6 @@ class GridBot:
             market_order = self.connector.place_market_sell(symbol, amount)
             if market_order:
                 log.success(f"Activo vendido a mercado (Market Sell) correctamente.")
-                # TRADUCCIÓ: Venda manual
                 send_msg(f"🔥 <b>VENTA A MERCADO (Manual)</b>\n{symbol} - {amount}")
                 return True
             else:
@@ -405,7 +456,6 @@ class GridBot:
         print()
         log.warning("⛔ ACCIÓN DE USUARIO: PAUSANDO BOT...")
         self.is_paused = True
-        # TRADUCCIÓ: Pausa
         send_msg("⏸️ <b>BOT PAUSADO</b>\nSe han detenido todas las operaciones.")
         return True
 
@@ -413,14 +463,12 @@ class GridBot:
         print()
         log.success("▶️ ACCIÓN DE USUARIO: REANUDANDO BOT...")
         self.is_paused = False
-        # TRADUCCIÓ: Reprendre
         send_msg("▶️ <b>BOT REANUDADO</b>\nContinuando operaciones.")
         return True
 
     def panic_cancel_all(self):
         print()
         log.warning("⛔ ACCIÓN DE PÁNICO: Cancelando todas las órdenes...")
-        # TRADUCCIÓ: Cancel·lar tot
         send_msg("🗑️ <b>PÁNICO: CANCELAR TODO</b>\nBorrando todas las órdenes del exchange...")
         count = 0
         for symbol in self.active_pairs:
@@ -433,7 +481,6 @@ class GridBot:
     def panic_sell_all(self):
         print()
         log.warning("🔥 ACCIÓN DE PÁNICO: VENDIENDO TODO A USDC...")
-        # TRADUCCIÓ: Vendre tot
         send_msg("🔥 <b>PÁNICO: VENDER TODO</b>\nLiquidando cartera a USDC...")
         sold_count = 0
         self.panic_cancel_all()
@@ -454,7 +501,6 @@ class GridBot:
             except Exception as e:
                 log.error(f"Error Panic Sell {symbol}: {e}")
         
-        # TRADUCCIÓ: Fi pànic
         send_msg(f"🔥 <b>PÁNICO FINALIZADO</b>\nSe han liquidado {sold_count} posiciones.")
         return sold_count
 
@@ -478,7 +524,6 @@ class GridBot:
         self.global_start_time = time.time()
         self.processed_trade_ids.clear()
 
-        # TRADUCCIÓ: Motor iniciat
         send_msg(f"🚀 <b>MOTOR INICIADO</b>\nPatrimonio inicial: {initial_equity:.2f} USDC")
 
         log.warning("Limpiando órdenes antiguas iniciales...")
@@ -512,7 +557,6 @@ class GridBot:
         if not self.is_running: return
         log.warning("Aturando lógica del bot...")
         self.is_running = False
-        # TRADUCCIÓ: Motor detingut
         send_msg("🛑 <b>MOTOR DETENIDO</b>\nEl bot se ha apagado.")
         log.success("Bot aturado.")
 

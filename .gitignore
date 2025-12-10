@@ -20,9 +20,10 @@ __pycache__/
 .vscode/
 .idea/
 
-# --- Arxius de dades ---
+# --- Arxius de dades i carpeta nova ---
 .db
 bot_data.db
 bot_data.db-wal
 bot_data.db-shm
 bot_data.db-journal
+data/

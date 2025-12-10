@@ -8,7 +8,9 @@
   "default_strategy": {
     "grids_quantity": 10,
     "amount_per_grid": 50,
-    "grid_spread": 1
+    "grid_spread": 1,
+    "start_mode": "wait",
+    "strategy_profile": "manual"
   },
   "pairs": [
     {
@@ -17,16 +19,20 @@
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 150,
-        "grid_spread": 0.3
+        "grid_spread": 1.2,
+        "start_mode": "wait",
+        "strategy_profile": "conservative"
       }
     },
     {
       "symbol": "ETH/USDC",
       "enabled": false,
       "strategy": {
-        "grids_quantity": 15,
+        "grids_quantity": 12,
         "amount_per_grid": 100,
-        "grid_spread": 0.2
+        "grid_spread": 0.8,
+        "start_mode": "buy_1",
+        "strategy_profile": "moderate"
       }
     },
     {
@@ -35,7 +41,9 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 12,
-        "grid_spread": 0.8
+        "grid_spread": 0.5,
+        "start_mode": "buy_2",
+        "strategy_profile": "aggressive"
       }
     },
     {
@@ -44,7 +52,9 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 12,
-        "grid_spread": 0.8
+        "grid_spread": 0.35,
+        "start_mode": "wait",
+        "strategy_profile": "aggressive"
       }
     },
     {
@@ -53,7 +63,9 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 12,
-        "grid_spread": 0.3
+        "grid_spread": 0.3,
+        "start_mode": "wait",
+        "strategy_profile": "manual"
       }
     },
     {
@@ -62,7 +74,9 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 12,
-        "grid_spread": 0.8
+        "grid_spread": 1.2,
+        "start_mode": "wait",
+        "strategy_profile": "manual"
       }
     },
     {
@@ -71,16 +85,20 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 12,
-        "grid_spread": 0.5
+        "grid_spread": 0.5,
+        "start_mode": "wait",
+        "strategy_profile": "manual"
       }
     },
     {
       "symbol": "PAXG/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 8,
-        "amount_per_grid": 12,
-        "grid_spread": 0.6
+        "grids_quantity": 16,
+        "amount_per_grid": 20,
+        "grid_spread": 0.3,
+        "start_mode": "buy_2",
+        "strategy_profile": "manual"
       }
     }
   ]

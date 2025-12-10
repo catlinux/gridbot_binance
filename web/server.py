@@ -8,6 +8,7 @@ import uvicorn
 import os
 import time
 import json5 
+import math
 from datetime import datetime
 from core.database import BotDatabase 
 from utils.telegram import send_msg
@@ -42,6 +43,35 @@ class LiquidateRequest(BaseModel):
 
 class ClearHistoryRequest(BaseModel):
     symbol: str
+
+# --- FUNCIÓ AUXILIAR CÀLCUL RSI ---
+def _calculate_rsi(candles, period=14):
+    try:
+        if not candles or len(candles) < period + 1:
+            return 50.0 
+        
+        closes = [float(c[4]) for c in candles]
+        deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+        
+        gains = [d if d > 0 else 0 for d in deltas]
+        losses = [-d if d < 0 else 0 for d in deltas]
+        
+        avg_gain = sum(gains[:period]) / period
+        avg_loss = sum(losses[:period]) / period
+        
+        for i in range(period, len(deltas)):
+            avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+            avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+            
+        if avg_loss == 0: return 100.0
+        if avg_gain == 0: return 0.0
+        
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        return round(rsi, 2)
+    except:
+        return 50.0
+# ----------------------------------
 
 # --- FUNCIÓ D'INICI DEL SERVIDOR ---
 def start_server(bot, host=None, port=None):
@@ -115,7 +145,6 @@ async def get_status():
                         current_total_equity += val
             except: pass
 
-        # --- CÀLCUL DE PNL ---
         global_start = db.get_global_start_balance()
         if global_start == 0: global_start = current_total_equity
         global_pnl_total = current_total_equity - global_start
@@ -160,7 +189,6 @@ async def get_status():
                 cf_session = session_cash_flow.get(symbol, 0.0)
                 qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
                 
-                # --- CORRECCIÓ DE L'ERROR ---
                 strat_pnl_session = (qty_delta * curr_price) + cf_session
 
                 if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
@@ -357,22 +385,18 @@ async def liquidate_asset_api(req: LiquidateRequest):
         log.error(f"Error liquidando {asset}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- ENDPOINT MODIFICAT: NETEJA INTEL·LIGENT ---
 @app.post("/api/history/clear")
 async def clear_history_api(req: ClearHistoryRequest):
     symbol = req.symbol
     keep_ids = []
     
     try:
-        # Recuperem configuració per saber el spread
         with open('config/config.json5', 'r') as f:
             config = json5.load(f)
         
-        # Busquem el spread d'aquesta moneda
         pair_conf = next((p for p in config['pairs'] if p['symbol'] == symbol), None)
         spread = pair_conf['strategy']['grid_spread'] if pair_conf else 1.0
         
-        # Obtenim ordres actives (de Binance si es pot, sino de DB)
         open_orders = []
         if bot_instance and bot_instance.connector.exchange:
             try:
@@ -383,12 +407,10 @@ async def clear_history_api(req: ClearHistoryRequest):
             data = db.get_pair_data(symbol)
             open_orders = data.get('open_orders', [])
 
-        # Identifiquem quins trades hem de protegir
         active_sells = [o for o in open_orders if o['side'] == 'sell']
         
         for o in active_sells:
             sell_price = float(o['price'])
-            # Busquem l'ID de la compra original a la DB
             uuid = db.get_buy_trade_uuid_for_sell_order(symbol, sell_price, spread)
             if uuid:
                 keep_ids.append(uuid)
@@ -403,6 +425,64 @@ async def clear_history_api(req: ClearHistoryRequest):
         return {"status": "success", "message": f"Historial limpiado.{protected_msg} Borrados: {count}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- ENDPOINT ANALISI ESTRATÈGIA (AMB TIMEFRAME) ---
+@app.get("/api/strategy/analyze/{symbol:path}")
+async def analyze_strategy(symbol: str, timeframe: str = '4h'):
+    try:
+        data = db.get_pair_data(symbol)
+        raw_candles = []
+        
+        # Intentem baixar dades fresques segons el timeframe demanat
+        if bot_instance and bot_instance.connector.exchange:
+            try: 
+                raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=50)
+            except: pass
+            
+        if not raw_candles:
+            raw_candles = data['candles']
+
+        rsi = _calculate_rsi(raw_candles)
+        
+        # Base de les propostes (per defecte)
+        base_s = {"conservative": 1.0, "moderate": 0.8, "aggressive": 0.5}
+        
+        # Ajustem la base segons el timeframe (més ràpid = menys spread)
+        if timeframe == '15m':
+            base_s = {"conservative": 0.6, "moderate": 0.4, "aggressive": 0.25}
+        elif timeframe == '1h':
+            base_s = {"conservative": 0.8, "moderate": 0.6, "aggressive": 0.35}
+        
+        suggestions = {
+            "rsi": rsi,
+            "conservative": {"grids": 8, "spread": base_s["conservative"]},
+            "moderate": {"grids": 10, "spread": base_s["moderate"]},
+            "aggressive": {"grids": 12, "spread": base_s["aggressive"]}
+        }
+        
+        # Ajust segons RSI (sobrecompra/sobrevenda)
+        if rsi < 35: 
+            suggestions["conservative"]["grids"] += 2
+            suggestions["conservative"]["spread"] += 0.2
+            suggestions["moderate"]["grids"] += 4
+            suggestions["aggressive"]["grids"] += 6
+            suggestions["aggressive"]["spread"] -= 0.1
+        elif rsi > 65:
+            suggestions["conservative"]["grids"] -= 3
+            suggestions["conservative"]["spread"] += 0.5 # Molt ample per esperar caiguda
+            suggestions["moderate"]["grids"] -= 2
+            suggestions["moderate"]["spread"] += 0.2
+            
+        # Arrodoniment final per estètica
+        for k in suggestions:
+            if k != "rsi":
+                suggestions[k]["spread"] = round(suggestions[k]["spread"], 2)
+
+        return suggestions
+    except Exception as e:
+        log.error(f"Error analitzant {symbol}: {e}")
+        return {"rsi": 50, "conservative": {}, "moderate": {}, "aggressive": {}}
+# ---------------------------------------------------
 
 @app.post("/api/close_order")
 async def close_order_api(req: CloseOrderRequest):
