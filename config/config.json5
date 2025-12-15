@@ -64,9 +64,9 @@
     },
     {
       "symbol": "ADA/USDC",
-      "enabled": false,
+      "enabled": true,
       "strategy": {
-        "grids_quantity": 8,
+        "grids_quantity": 10,
         "amount_per_grid": 10,
         "grid_spread": 0.6,
         "start_mode": "buy_1",
