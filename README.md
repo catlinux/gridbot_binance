@@ -69,7 +69,7 @@ Binance ofrece un bot gratuito, pero es muy limitado para usuarios avanzados que
     * **Control Total:** Arranca, pausa o detén el motor desde la web.
 * **Seguridad:** Gestión de claves API mediante variables de entorno (`.env`) y sistema de logs detallados.
 
-![Ejemplo de Gráfico con Órdenes](web/static/img/chart_example.png)
+![Ejemplo de Gráfico con Órdenes](docs/screenshots/chart_example.png)
 *(Añade aquí una imagen del gráfico con las líneas de compra/venta)*
 
 ---
@@ -183,7 +183,7 @@ Abre tu navegador en: **http://localhost:8000**
 
 Para que el bot te avise al móvil, necesitas crear tu propio bot de avisos. Es gratis y muy rápido:
 
-![Ejemplo de Alertas en Telegram](web/static/img/telegram_alert.png)
+![Ejemplo de Alertas en Telegram](docs/screenshots/telegram_alert.png)
 *(Añade aquí una captura del bot de Telegram enviando una alerta)*
 
 1.  **Crear el Bot:**
@@ -204,7 +204,7 @@ Para que el bot te avise al móvil, necesitas crear tu propio bot de avisos. Es 
 
 ## 🎮 Guía de Uso
 
-![Pantalla de Configuración](web/static/img/config_screen.png)
+![Pantalla de Configuración](docs/screenshots/config_screen.png)
 *(Añade aquí una captura de la pestaña de configuración)*
 
 1.  **Configuración (Pestaña ⚙️):**
