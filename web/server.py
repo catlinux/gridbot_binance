@@ -44,6 +44,9 @@ class LiquidateRequest(BaseModel):
 class ClearHistoryRequest(BaseModel):
     symbol: str
 
+class CoinResetRequest(BaseModel):
+    symbol: str
+
 # --- FUNCIÓ AUXILIAR CÀLCUL RSI ---
 def _calculate_rsi(candles, period=14):
     try:
@@ -73,7 +76,6 @@ def _calculate_rsi(candles, period=14):
         return 50.0
 # ----------------------------------
 
-# --- FUNCIÓ D'INICI DEL SERVIDOR ---
 def start_server(bot, host=None, port=None):
     global bot_instance
     bot_instance = bot
@@ -87,7 +89,6 @@ def start_server(bot, host=None, port=None):
         port = int(os.getenv('WEB_PORT', 8000))
         
     uvicorn.run(app, host=host, port=port, log_level="error")
-# -----------------------------------
 
 def format_uptime(seconds):
     if seconds < 0: return "0s"
@@ -125,7 +126,9 @@ def get_status():
         holding_values = {}
         current_prices_map = {}
 
-        pairs_to_check = bot_instance.active_pairs if bot_instance.active_pairs else []
+        pairs_to_check = []
+        if bot_instance and bot_instance.config:
+            pairs_to_check = [p['symbol'] for p in bot_instance.config.get('pairs', [])]
         
         for symbol in pairs_to_check:
             base = symbol.split('/')[0]
@@ -133,7 +136,7 @@ def get_status():
                 qty = bot_instance.connector.get_total_balance(base)
                 price = prices.get(symbol, 0.0)
                 
-                if price == 0 and bot_instance.is_running: 
+                if price == 0 and bot_instance.connector.exchange: 
                     price = bot_instance.connector.fetch_current_price(symbol)
                 
                 if price > 0:
@@ -144,14 +147,6 @@ def get_status():
                         portfolio.append({"name": base, "value": round(val, 2)})
                         current_total_equity += val
             except: pass
-
-        global_start = db.get_global_start_balance()
-        if global_start == 0: global_start = current_total_equity
-        global_pnl_total = current_total_equity - global_start
-
-        session_start_equity = db.get_session_start_balance()
-        if session_start_equity == 0: session_start_equity = current_total_equity
-        session_pnl_total = current_total_equity - session_start_equity
 
         global_stats = db.get_stats(from_timestamp=0)
         session_start_ts = bot_instance.global_start_time
@@ -170,9 +165,17 @@ def get_status():
         session_cash_flow = session_stats['per_coin_stats']['cash_flow']
         global_trades_map = global_stats['per_coin_stats']['trades']
 
+        acc_global_pnl = 0.0
+        acc_session_pnl = 0.0
+
         for symbol in pairs_to_check:
             try:
-                strat_conf = bot_instance.pairs_map.get(symbol, {}).get('strategy', {})
+                pair_config = next((p for p in bot_instance.config['pairs'] if p['symbol'] == symbol), None)
+                if not pair_config: continue
+
+                strat_conf = pair_config.get('strategy', {})
+                is_enabled = pair_config.get('enabled', False)
+
                 trades_count = global_trades_map.get(symbol, 0)
                 curr_price = current_prices_map.get(symbol, 0.0)
                 curr_val = holding_values.get(symbol, 0.0)
@@ -188,27 +191,34 @@ def get_status():
 
                 cf_session = session_cash_flow.get(symbol, 0.0)
                 qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
-                
                 strat_pnl_session = (qty_delta * curr_price) + cf_session
 
                 if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
                      strat_pnl_global = 0.0
 
-                strategies_data.append({
-                    "symbol": symbol,
-                    "grids": strat_conf.get('grids_quantity', '-'),
-                    "amount": strat_conf.get('amount_per_grid', '-'),
-                    "spread": strat_conf.get('grid_spread', '-'),
-                    "total_trades": trades_count,
-                    "total_pnl": round(strat_pnl_global, 2),  
-                    "session_pnl": round(strat_pnl_session, 2)
-                })
+                acc_global_pnl += strat_pnl_global
+                acc_session_pnl += strat_pnl_session
+
+                if is_enabled or trades_count > 0 or curr_val > 1.0:
+                    strategies_data.append({
+                        "symbol": symbol,
+                        "enabled": is_enabled,
+                        "grids": strat_conf.get('grids_quantity', '-'),
+                        "amount": strat_conf.get('amount_per_grid', '-'),
+                        "spread": strat_conf.get('grid_spread', '-'),
+                        "total_trades": trades_count,
+                        "total_pnl": round(strat_pnl_global, 2),  
+                        "session_pnl": round(strat_pnl_session, 2)
+                    })
             except Exception as e:
                 log.error(f"Error procesando stats {symbol}: {e}")
 
+        global_pnl_total = acc_global_pnl
+        session_pnl_total = acc_session_pnl
+
         return {
             "status": status_text,
-            "active_pairs": pairs_to_check,
+            "active_pairs": bot_instance.active_pairs if bot_instance else [], 
             "balance_usdc": round(usdc_balance, 2),
             "total_usdc_value": round(current_total_equity, 2),
             "portfolio_distribution": portfolio,
@@ -389,74 +399,128 @@ def liquidate_asset_api(req: LiquidateRequest):
 def clear_history_api(req: ClearHistoryRequest):
     symbol = req.symbol
     keep_ids = []
-    
     try:
-        with open('config/config.json5', 'r') as f:
-            config = json5.load(f)
-        
+        with open('config/config.json5', 'r') as f: config = json5.load(f)
         pair_conf = next((p for p in config['pairs'] if p['symbol'] == symbol), None)
         spread = pair_conf['strategy']['grid_spread'] if pair_conf else 1.0
-        
         open_orders = []
         if bot_instance and bot_instance.connector.exchange:
-            try:
-                open_orders = bot_instance.connector.fetch_open_orders(symbol)
+            try: open_orders = bot_instance.connector.fetch_open_orders(symbol)
             except: pass
-        
         if not open_orders:
             data = db.get_pair_data(symbol)
             open_orders = data.get('open_orders', [])
-
         active_sells = [o for o in open_orders if o['side'] == 'sell']
-        
         for o in active_sells:
             sell_price = float(o['price'])
             uuid = db.get_buy_trade_uuid_for_sell_order(symbol, sell_price, spread)
-            if uuid:
-                keep_ids.append(uuid)
-                
-    except Exception as e:
-        log.error(f"Error calculant smart clear: {e}")
-        pass
+            if uuid: keep_ids.append(uuid)
+    except: pass
 
     try:
         count = db.delete_history_smart(symbol, keep_ids)
-        protected_msg = f" (Protegidos {len(keep_ids)} registros activos)" if keep_ids else ""
-        return {"status": "success", "message": f"Historial limpiado.{protected_msg} Borrados: {count}"}
+        return {"status": "success", "message": f"Historial limpiado. Borrados: {count}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- ENDPOINT ANALISI ESTRATÈGIA ---
+# --- NOUS ENDPOINTS PER MANTENIMENT DE DADES ---
+
+@app.post("/api/reset_stats")
+def reset_stats_api():
+    try:
+        db.reset_all_statistics()
+        if bot_instance:
+            bot_instance.global_start_time = time.time()
+            bot_instance.levels = {} 
+            if bot_instance.is_running:
+                db.set_session_start_time(bot_instance.global_start_time)
+                initial_equity = bot_instance.calculate_total_equity()
+                db.set_session_start_balance(initial_equity)
+                bot_instance.capture_initial_snapshots()
+        send_msg("⚠️ <b>RESET TOTAL</b>\nSe han borrado todas las estadísticas.")
+        return {"status": "success", "message": "Reset Total completado."}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reset/chart/global")
+def reset_global_chart_api():
+    try:
+        db.clear_balance_history()
+        return {"status": "success", "message": "Gráfica Global reiniciada."}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reset/chart/session")
+def reset_session_chart_api():
+    try:
+        # Reiniciar sessió (afecta gràfica i PnL sessió)
+        new_time = time.time()
+        db.set_session_start_time(new_time)
+        if bot_instance:
+            bot_instance.global_start_time = new_time
+            # Recalcular balanç inicial sessió
+            initial_equity = bot_instance.calculate_total_equity()
+            db.set_session_start_balance(initial_equity)
+        return {"status": "success", "message": "Gráfica/PnL Sesión reiniciados."}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reset/pnl/global")
+def reset_global_pnl_api():
+    try:
+        db.clear_all_trades_history()
+        return {"status": "success", "message": "Historial de PnL Global borrado."}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/refresh_orders")
+def refresh_orders_api():
+    try:
+        db.clear_orders_cache()
+        return {"status": "success", "message": "Caché de órdenes limpiada. Se recargarán en breve."}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reset/coin/session")
+def reset_coin_session_api(req: CoinResetRequest):
+    try:
+        db.set_coin_session_start(req.symbol, time.time())
+        # També reiniciem el balanç inicial d'aquesta moneda per al PnL
+        if bot_instance:
+             try:
+                base = req.symbol.split('/')[0]
+                qty = bot_instance.connector.get_total_balance(base)
+                price = bot_instance.connector.fetch_current_price(req.symbol)
+                db.set_coin_initial_balance(req.symbol, qty * price)
+             except: pass
+        return {"status": "success", "message": f"Sesión reiniciada para {req.symbol}."}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reset/coin/global")
+def reset_coin_global_api(req: CoinResetRequest):
+    try:
+        db.delete_trades_for_symbol(req.symbol)
+        # També reiniciem saldo inicial per que el PnL global no quedi "boig"
+        if bot_instance:
+             try:
+                base = req.symbol.split('/')[0]
+                qty = bot_instance.connector.get_total_balance(base)
+                price = bot_instance.connector.fetch_current_price(req.symbol)
+                db.set_coin_initial_balance(req.symbol, qty * price)
+             except: pass
+        return {"status": "success", "message": f"Historial Global borrado para {req.symbol}."}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
+# ---------------------------------------------
+
 @app.get("/api/strategy/analyze/")
 def analyze_strategy(symbol: str, timeframe: str = '4h'):
     try:
         rsi = 50.0
-        
-        if bot_instance:
-            if not bot_instance.connector.exchange:
-                try:
-                    bot_instance.connector.check_and_reload_config()
-                except: pass
-        
-        raw_candles = []
         if bot_instance and bot_instance.connector.exchange:
             try: 
-                # --- CANVI: 1000 ESPELMES ---
                 raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=1000)
+                if raw_candles: rsi = _calculate_rsi(raw_candles)
             except: pass
-            
-        if not raw_candles:
-             data = db.get_pair_data(symbol)
-             raw_candles = data['candles']
-        
-        if raw_candles:
-            rsi = _calculate_rsi(raw_candles)
         
         base_s = {"conservative": 1.0, "moderate": 0.8, "aggressive": 0.5}
-        if timeframe == '15m':
-            base_s = {"conservative": 0.6, "moderate": 0.4, "aggressive": 0.25}
-        elif timeframe == '1h':
-            base_s = {"conservative": 0.8, "moderate": 0.6, "aggressive": 0.35}
+        if timeframe == '15m': base_s = {"conservative": 0.6, "moderate": 0.4, "aggressive": 0.25}
+        elif timeframe == '1h': base_s = {"conservative": 0.8, "moderate": 0.6, "aggressive": 0.35}
         
         suggestions = {
             "rsi": rsi,
@@ -466,31 +530,18 @@ def analyze_strategy(symbol: str, timeframe: str = '4h'):
         }
         
         if rsi < 35: 
-            suggestions["conservative"]["grids"] += 2
-            suggestions["conservative"]["spread"] += 0.2
-            suggestions["moderate"]["grids"] += 4
-            suggestions["aggressive"]["grids"] += 6
-            suggestions["aggressive"]["spread"] -= 0.1
+            suggestions["conservative"]["grids"] += 2; suggestions["conservative"]["spread"] += 0.2
+            suggestions["moderate"]["grids"] += 4; suggestions["aggressive"]["grids"] += 6; suggestions["aggressive"]["spread"] -= 0.1
         elif rsi > 65:
-            suggestions["conservative"]["grids"] -= 3
-            suggestions["conservative"]["spread"] += 0.5 
-            suggestions["moderate"]["grids"] -= 2
-            suggestions["moderate"]["spread"] += 0.2
+            suggestions["conservative"]["grids"] -= 3; suggestions["conservative"]["spread"] += 0.5 
+            suggestions["moderate"]["grids"] -= 2; suggestions["moderate"]["spread"] += 0.2
             
         for k in suggestions:
-            if k != "rsi":
-                suggestions[k]["spread"] = round(suggestions[k]["spread"], 2)
+            if k != "rsi": suggestions[k]["spread"] = round(suggestions[k]["spread"], 2)
 
         return suggestions
-    except Exception as e:
-        log.error(f"Error analitzant {symbol}: {e}")
-        return {
-            "rsi": 50, 
-            "conservative": {"grids": 8, "spread": 1.0}, 
-            "moderate": {"grids": 10, "spread": 0.8}, 
-            "aggressive": {"grids": 12, "spread": 0.5}
-        }
-# -------------------------------------------------------------
+    except Exception:
+        return {"rsi": 50, "conservative": {"grids": 8, "spread": 1.0}, "moderate": {"grids": 10, "spread": 0.8}, "aggressive": {"grids": 12, "spread": 0.5}}
 
 @app.post("/api/close_order")
 def close_order_api(req: CloseOrderRequest):
@@ -505,7 +556,6 @@ def get_pair_details(symbol: str, timeframe: str = '15m'):
         data = db.get_pair_data(symbol)
         raw_candles = []
         if bot_instance and bot_instance.is_running:
-            # --- CANVI: 1000 ESPELMES ---
             try: raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=1000)
             except: pass
         if not raw_candles: raw_candles = data['candles']
@@ -540,8 +590,11 @@ def get_pair_details(symbol: str, timeframe: str = '15m'):
 
                 global_pnl = (current_val - init_val) + cf_global
                 
-                session_start_ts = bot_instance.global_start_time
-                session_stats = db.get_stats(from_timestamp=session_start_ts)
+                # Sessiò: Mirem si aquesta moneda té un inici específic
+                coin_session_ts = db.get_coin_session_start(symbol)
+                if coin_session_ts == 0: coin_session_ts = bot_instance.global_start_time
+                
+                session_stats = db.get_stats(from_timestamp=coin_session_ts)
                 cf_session = session_stats['per_coin_stats']['cash_flow'].get(symbol, 0.0)
                 qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
                 pnl_value = (qty_delta * current_price) + cf_session
@@ -572,30 +625,13 @@ def save_config(config: ConfigUpdate):
     try:
         json5.loads(config.content)
         with open('config/config.json5', 'w') as f: f.write(config.content)
-        
         if bot_instance:
             bot_instance.connector.check_and_reload_config()
             bot_instance.config = bot_instance.connector.config
             bot_instance._refresh_pairs_map()
-
         send_msg("💾 <b>CONFIGURACIÓN GUARDADA</b>\nSe han aplicado cambios desde la web.")
-            
         return {"status": "success", "message": "Configuración guardada y aplicada."}
     except Exception as e: raise HTTPException(status_code=400, detail=f"Error JSON5: {e}")
-
-@app.post("/api/reset_stats")
-def reset_stats_api():
-    try:
-        db.reset_all_statistics()
-        if bot_instance:
-            bot_instance.global_start_time = time.time()
-            if bot_instance.is_running:
-                bot_instance.capture_initial_snapshots()
-        
-        send_msg("⚠️ <b>RESET DE ESTADÍSTICAS</b>\nSe han borrado los datos históricos y reiniciado el PnL.")
-
-        return {"status": "success", "message": "Estadísticas reiniciadas."}
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/panic/stop")
 def panic_stop_api():
@@ -628,10 +664,8 @@ def panic_sell_all_api():
 @app.post("/api/engine/on")
 def engine_on_api():
     if bot_instance:
-        if bot_instance.launch():
-            return {"status": "success", "message": "Motor de trading ARRANCADO."}
-        else:
-            return {"status": "warning", "message": "El motor ya está corriendo."}
+        if bot_instance.launch(): return {"status": "success", "message": "Motor de trading ARRANCADO."}
+        else: return {"status": "warning", "message": "El motor ya está corriendo."}
     return {"status": "error", "detail": "Error interno"}
 
 @app.post("/api/engine/off")

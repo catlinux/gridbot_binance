@@ -32,7 +32,7 @@
       "strategy": {
         "grids_quantity": 12,
         "amount_per_grid": 10,
-        "grid_spread": 0.5,
+        "grid_spread": 0.7,
         "start_mode": "buy_1",
         "strategy_profile": "manual",
         "trailing_enabled": true
@@ -40,11 +40,11 @@
     },
     {
       "symbol": "BNB/USDC",
-      "enabled": true,
+      "enabled": false,
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 10,
-        "grid_spread": 0.5,
+        "grid_spread": 0.6,
         "start_mode": "buy_2",
         "strategy_profile": "manual",
         "trailing_enabled": true
@@ -56,22 +56,22 @@
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 10,
-        "grid_spread": 0.6,
-        "start_mode": "wait",
+        "grid_spread": 0.8,
+        "start_mode": "buy_1",
         "strategy_profile": "manual",
         "trailing_enabled": true
       }
     },
     {
       "symbol": "ADA/USDC",
-      "enabled": false,
+      "enabled": true,
       "strategy": {
         "grids_quantity": 8,
-        "amount_per_grid": 12,
-        "grid_spread": 0.3,
-        "start_mode": "wait",
+        "amount_per_grid": 10,
+        "grid_spread": 0.6,
+        "start_mode": "buy_1",
         "strategy_profile": "manual",
-        "trailing_enabled": false
+        "trailing_enabled": true
       }
     },
     {
@@ -81,7 +81,7 @@
         "grids_quantity": 10,
         "amount_per_grid": 10,
         "grid_spread": 0.8,
-        "start_mode": "wait",
+        "start_mode": "buy_1",
         "strategy_profile": "manual",
         "trailing_enabled": true
       }
@@ -93,7 +93,7 @@
         "grids_quantity": 10,
         "amount_per_grid": 10,
         "grid_spread": 0.8,
-        "start_mode": "wait",
+        "start_mode": "buy_1",
         "strategy_profile": "manual",
         "trailing_enabled": true
       }

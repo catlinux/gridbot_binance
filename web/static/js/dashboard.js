@@ -5,7 +5,7 @@ import { loadConfigForm, saveConfigForm, toggleCard, changeRsiTf, applyStrategy,
 // --- ESTAT GLOBAL ---
 let currentMode = 'home';
 let currentTimeframe = '15m';
-let currentChartType = 'candles'; // Nou estat per al tipus de gràfic
+let currentChartType = 'candles'; 
 let dataCache = {}; 
 let fullGlobalHistory = []; 
 
@@ -19,17 +19,27 @@ window.setManual = setManual;
 window.setMode = setMode;
 window.setTimeframe = setTimeframe;
 window.setChartType = setChartType;
-window.resetZoom = resetZoom; // Nova funció
+window.resetZoom = resetZoom; 
 window.loadWallet = loadWallet;
 window.resetStatistics = resetStatistics;
 window.panicStop = panicStop;
 window.panicStart = panicStart;
 window.panicCancel = panicCancel;
 window.panicSell = panicSell;
+window.startEngine = startEngine;
+window.stopEngine = stopEngine;
 window.clearHistory = clearHistory;
 window.closeOrder = closeOrder;
-window.filterHistory = function(h) { alert("Filtro: " + h + "h (Pendent)"); };
+window.filterHistory = filterHistory; 
 window.liquidateAsset = liquidateAsset;
+
+// Noves exportacions
+window.resetGlobalChart = resetGlobalChart;
+window.resetSessionChart = resetSessionChart;
+window.resetGlobalPnL = resetGlobalPnL;
+window.refreshOrders = refreshOrders;
+window.resetCoinSession = resetCoinSession;
+window.resetCoinGlobal = resetCoinGlobal;
 
 // --- FUNCIONS PRINCIPALS ---
 
@@ -111,8 +121,20 @@ function ensureTabExists(symbol) {
                             <div class="col-6"><div class="bg-sell p-3 rounded"><small class="d-block fw-bold mb-1">VENTAS</small><b class="fs-3" id="count-sell-${safe}">0</b></div></div>
                         </div>
                         <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between mt-3 bg-light"><strong>Balance Sesión</strong><b id="sess-pnl-${safe}">--</b></li>
-                            <li class="list-group-item d-flex justify-content-between bg-light"><strong>Balance Global</strong><b id="glob-pnl-${safe}">--</b></li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center mt-3 bg-light">
+                                <strong>Balance Sesión</strong>
+                                <div class="d-flex align-items-center gap-2">
+                                    <b id="sess-pnl-${safe}">--</b>
+                                    <button class="btn btn-xs btn-outline-danger" onclick="resetCoinSession('${symbol}')" title="Reiniciar Sesión solo para ${symbol}"><i class="fa-solid fa-rotate-right"></i></button>
+                                </div>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center bg-light">
+                                <strong>Balance Global</strong>
+                                <div class="d-flex align-items-center gap-2">
+                                    <b id="glob-pnl-${safe}">--</b>
+                                    <button class="btn btn-xs btn-outline-danger" onclick="resetCoinGlobal('${symbol}')" title="Borrar Histórico Global de ${symbol}"><i class="fa-solid fa-trash-can"></i></button>
+                                </div>
+                            </li>
                         </ul>
                     </div>
                 </div>
@@ -157,11 +179,34 @@ function setChartType(type) {
     if(currentMode!=='home' && currentMode!=='config' && currentMode!=='wallet') loadSymbol(currentMode);
 }
 
-// Funció que es crida des del botó
 function resetZoom(symbol) {
     const safe = symbol.replace('/', '_');
-    resetChartZoom(safe); // Posa la bandera a false
-    loadSymbol(symbol); // Força el repintat immediat
+    resetChartZoom(safe); 
+    loadSymbol(symbol); 
+}
+
+// --- FUNCIÓ DE FILTRATGE ---
+function filterHistory(hours) {
+    const buttons = document.querySelectorAll('.hist-btn');
+    buttons.forEach(btn => {
+        btn.classList.remove('active');
+        const val = btn.getAttribute('onclick');
+        if(hours === 'all' && val.includes("'all'")) btn.classList.add('active');
+        else if(val.includes(`(${hours})`)) btn.classList.add('active');
+    });
+
+    if (!fullGlobalHistory || fullGlobalHistory.length === 0) return;
+
+    let filteredData = [];
+    if (hours === 'all') {
+        filteredData = fullGlobalHistory;
+    } else {
+        const now = Date.now();
+        const cutoff = now - (hours * 3600 * 1000);
+        filteredData = fullGlobalHistory.filter(d => d[0] >= cutoff);
+    }
+
+    renderLineChart('balanceChartGlobal', filteredData, '#3b82f6');
 }
 
 // --- LOADERS ---
@@ -174,21 +219,13 @@ async function loadHome() {
         
         const badge = document.getElementById('status-badge');
         let engineBtn = document.getElementById('btn-engine-toggle');
-        if (!engineBtn) {
-            engineBtn = document.createElement('button');
-            engineBtn.id = 'btn-engine-toggle';
-            engineBtn.className = 'btn btn-sm ms-3';
-            engineBtn.onclick = toggleEngine;
-            badge.parentElement.insertBefore(engineBtn, badge.nextSibling);
-        }
+        if (engineBtn) engineBtn.remove(); 
         
         if(data.status === 'Stopped') {
             badge.innerText = 'DETENIDO'; badge.className = 'badge bg-danger me-2';
-            engineBtn.innerHTML = '<i class="fa-solid fa-power-off"></i> ENCENDER'; engineBtn.className = 'btn btn-sm btn-success ms-3 fw-bold';
         } else {
             badge.innerText = data.status === 'Paused' ? 'PAUSADO' : 'OPERATIVO';
             badge.className = data.status === 'Paused' ? 'badge bg-warning text-dark me-2' : 'badge bg-success me-2';
-            engineBtn.innerHTML = '<i class="fa-solid fa-power-off"></i> APAGAR'; engineBtn.className = 'btn btn-sm btn-outline-danger ms-3';
         }
 
         document.getElementById('total-balance').innerText = `${fmtUSDC(data.total_usdc_value)} USDC`;
@@ -238,7 +275,11 @@ async function loadSymbol(symbol) {
         const allOrders = [...data.open_orders].sort((a,b) => b.price - a.price);
         document.getElementById(`orders-${safe}`).innerHTML = allOrders.map(o => `<tr><td><b class="${o.side=='buy'?'text-buy':'text-sell'}">${o.side.toUpperCase()}</b></td><td>${fmtPrice(o.price)}</td><td>${fmtCrypto(o.amount)}</td></tr>`).join('');
         
-        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => `<tr><td><span class="badge bg-secondary">${t.buy_id || '-'}</span></td><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side.toUpperCase()}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`).join('');
+        document.getElementById(`trades-${safe}`).innerHTML = data.trades.map(t => {
+            let idBadge = t.buy_id || '-';
+            if(t.side === 'sell' && t.buy_id) idBadge = '⮑ ' + t.buy_id; 
+            return `<tr><td><span class="badge bg-secondary">${idBadge}</span></td><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side.toUpperCase()}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`;
+        }).join('');
 
     } catch(e) { console.error(e); }
 }
@@ -288,32 +329,235 @@ async function loadBalanceCharts() {
         const data = await res.json();
         fullGlobalHistory = data.global; 
         renderLineChart('balanceChartSession', data.session, '#0ecb81');
-        renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); 
+        const activeBtn = document.querySelector('.hist-btn.active');
+        if(activeBtn && activeBtn.innerText === '24h') filterHistory(24);
+        else if(activeBtn && activeBtn.innerText === '7d') filterHistory(168);
+        else renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); 
+
     } catch(e) { console.error("Error loading charts", e); }
 }
 
-async function closeOrder(s,i,side,a) { if(confirm("¿Cancelar orden?")) postAction('/api/close_order', {symbol:s, order_id:i, side:side, amount:a}); }
-async function liquidateAsset(a) { if(confirm("¿Liquidar " + a + "?")) postAction('/api/liquidate_asset', {asset:a}, loadWallet); }
-async function clearHistory(s) { if(confirm("¿Borrar historial " + s + "?")) postAction('/api/history/clear', {symbol:s}); }
-async function toggleEngine() { const btn=document.getElementById('btn-engine-toggle'); const action = btn.classList.contains('btn-success') ? 'on' : 'off'; if(confirm("¿Seguro?")) postAction(`/api/engine/${action}`); }
-async function resetStatistics() { if(confirm("¿Reset total?")) postAction('/api/reset_stats', {}, () => location.reload()); }
-async function panicStop() { if(confirm("¿Pausar?")) postAction('/api/panic/stop'); }
-async function panicStart() { postAction('/api/panic/start'); }
-async function panicCancel() { if(confirm("¿Cancelar todo?")) postAction('/api/panic/cancel_all'); }
-async function panicSell() { if(confirm("¿Vender todo?")) postAction('/api/panic/sell_all'); }
+async function closeOrder(s, i, side, a) {
+    const result = await Swal.fire({
+        title: '¿Cancelar Orden?',
+        text: `${side.toUpperCase()} ${s} - Cantidad: ${a}`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Sí, cancelar'
+    });
+    if (result.isConfirmed) {
+        postAction('/api/close_order', { symbol: s, order_id: i, side: side, amount: a });
+    }
+}
+
+async function liquidateAsset(a) {
+    const result = await Swal.fire({
+        title: `¿Liquidar ${a}?`,
+        text: "Se cancelarán las órdenes y se venderá todo a mercado.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Sí, vender todo'
+    });
+    if (result.isConfirmed) {
+        postAction('/api/liquidate_asset', { asset: a }, loadWallet);
+    }
+}
+
+async function clearHistory(s) {
+    const result = await Swal.fire({
+        title: '¿Borrar Historial?',
+        text: `Se eliminarán los trades antiguos de ${s} de la base de datos.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, borrar'
+    });
+    if (result.isConfirmed) {
+        postAction('/api/history/clear', { symbol: s });
+    }
+}
+
+async function resetStatistics() {
+    const result = await Swal.fire({
+        title: '¿RESET TOTAL?',
+        text: "ESTO ES IRREVERSIBLE. Borrará todo el historial y gráficas.",
+        icon: 'error',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Sí, reiniciar todo'
+    });
+    if (result.isConfirmed) {
+        postAction('/api/reset_stats', {}, () => location.reload());
+    }
+}
+
+async function panicStop() {
+    const result = await Swal.fire({
+        title: '¿Pausar Operaciones?',
+        text: "El bot dejará de analizar el mercado.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Pausar'
+    });
+    if (result.isConfirmed) postAction('/api/panic/stop');
+}
+
+async function panicStart() {
+    postAction('/api/panic/start');
+}
+
+async function panicCancel() {
+    const result = await Swal.fire({
+        title: '¿CANCELAR TODO?',
+        text: "Se borrarán todas las órdenes del Exchange.",
+        icon: 'error',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Sí, cancelar todo'
+    });
+    if (result.isConfirmed) postAction('/api/panic/cancel_all');
+}
+
+async function panicSell() {
+    const result = await Swal.fire({
+        title: '¿VENDER TODO?',
+        text: "PELIGRO: Se venderán todas las posiciones a mercado.",
+        icon: 'error',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Sí, vender todo'
+    });
+    if (result.isConfirmed) postAction('/api/panic/sell_all');
+}
+
+async function startEngine() {
+    const result = await Swal.fire({
+        title: '¿Arrancar Motor?',
+        text: "Iniciará la operativa automática.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Arrancar'
+    });
+    if (result.isConfirmed) postAction('/api/engine/on');
+}
+
+async function stopEngine() {
+    const result = await Swal.fire({
+        title: '¿Detener Motor?',
+        text: "Se detendrá el análisis de mercado.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Detener'
+    });
+    if (result.isConfirmed) postAction('/api/engine/off');
+}
+
+async function resetGlobalChart() {
+    const result = await Swal.fire({
+        title: '¿Borrar Gráfica Global?',
+        text: "Se eliminará el historial visual del balance.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Borrar'
+    });
+    if (result.isConfirmed) postAction('/api/reset/chart/global');
+}
+
+async function resetSessionChart() {
+    const result = await Swal.fire({
+        title: '¿Reiniciar Sesión?',
+        text: "Se reiniciará la gráfica de sesión y el contador de PnL de sesión.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Reiniciar'
+    });
+    if (result.isConfirmed) postAction('/api/reset/chart/session');
+}
+
+async function resetGlobalPnL() {
+    const result = await Swal.fire({
+        title: '¿Borrar Historial PnL?',
+        text: "Se eliminarán todos los registros de trades pasados.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Borrar'
+    });
+    if (result.isConfirmed) postAction('/api/reset/pnl/global');
+}
+
+async function refreshOrders() {
+    postAction('/api/refresh_orders');
+}
+
+async function resetCoinSession(symbol) {
+    const result = await Swal.fire({
+        title: `¿Reiniciar Sesión ${symbol}?`,
+        text: "Solo afectará al contador de esta moneda.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Reiniciar'
+    });
+    if (result.isConfirmed) postAction('/api/reset/coin/session', { symbol: symbol });
+}
+
+async function resetCoinGlobal(symbol) {
+    const result = await Swal.fire({
+        title: `¿Borrar Historial ${symbol}?`,
+        text: "Se eliminarán los trades antiguos de esta moneda.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Borrar'
+    });
+    if (result.isConfirmed) postAction('/api/reset/coin/global', { symbol: symbol });
+}
 
 async function postAction(url, body={}, cb=null) {
     try {
         const res = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
         const d = await res.json();
-        if(res.ok) { alert(d.message); if(cb) cb(); else { dataCache={}; loadHome(); } }
-        else alert("Error: " + d.detail);
-    } catch(e) { alert("Error conexión"); }
+        
+        if(res.ok) { 
+            // 1. PRIMER: Actualitzem la interfície (Badge, taules, etc.)
+            // Fem servir 'await' per assegurar que el DOM canvia ABANS de l'alerta.
+            if(cb) await cb(); 
+            else { 
+                dataCache = {}; 
+                await loadHome(); 
+            } 
+
+            // 2. SEGON: Mostrem l'alerta d'èxit
+            Swal.fire({
+                title: 'Éxito',
+                text: d.message,
+                icon: 'success',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        }
+        else {
+            Swal.fire({
+                title: 'Error',
+                text: d.detail || "Ha ocurrido un error",
+                icon: 'error'
+            });
+        }
+    } catch(e) { 
+        Swal.fire({
+            title: 'Error de Conexión',
+            text: "No se puede conectar con el servidor.",
+            icon: 'error'
+        });
+    }
 }
 
 // Loop principal
 init();
 setInterval(() => {
-    if(currentMode === 'home') { loadHome(); loadBalanceCharts(); }
+    if(currentMode === 'home') { loadHome(); } 
     else if(currentMode !== 'config' && currentMode !== 'wallet') loadSymbol(currentMode);
 }, 4000);
