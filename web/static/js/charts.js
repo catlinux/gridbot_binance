@@ -1,59 +1,123 @@
+// Arxiu: gridbot_binance/web/static/js/charts.js
 import { fmtUSDC, fmtInt } from './utils.js';
 
-// Cache para instancias de Lightweight Charts
+// Cache per a instàncies de Lightweight Charts (Veles/Línies)
 let chartInstances = {};
 
-// Mantenemos ECharts SOLO para los Donuts (Pie Charts)
-let donutCache = {};
+// --- GESTIÓ DE COLORS (TEMA) ---
+function getThemeColors() {
+    const theme = localStorage.getItem('gridbot_theme');
+    const isDark = theme && theme !== 'default' && theme !== 'light';
+    
+    return isDark ? {
+        bg: '#2c3038',   // Fons fosc
+        text: '#b9b9c3', // Text gris clar
+        grid: '#3b4047', 
+        border: '#3b4047',
+        up: '#0ecb81',
+        down: '#f6465d'
+    } : {
+        bg: '#ffffff',   // Blanc
+        text: '#333333',
+        grid: '#f0f3fa',
+        border: '#d1d3e2',
+        up: '#0ecb81',
+        down: '#f6465d'
+    };
+}
+
+// --- MILLORA DONUTS (ECharts) ---
+// Ara són responsive i no fan parpelleig
 export function renderDonut(domId, data, isCurrency = false) {
     const dom = document.getElementById(domId);
     if (!dom) return;
-    const chart = echarts.getInstanceByDom(dom) || echarts.init(dom);
-    const chartData = (data && data.length > 0) ? data : [{value: 0, name: 'Sin Datos'}];
     
-    const cacheKey = domId + JSON.stringify(chartData);
-    if (donutCache[cacheKey]) return;
-    donutCache[cacheKey] = true;
+    // 1. REUTILITZAR INSTÀNCIA: No destruïm si ja existeix
+    let chart = echarts.getInstanceByDom(dom);
+    if (!chart) {
+        chart = echarts.init(dom);
+        // Afegim el resize automàtic només un cop al crear
+        window.addEventListener('resize', () => chart.resize());
+    }
+    
+    const chartData = (data && data.length > 0) ? data : [{value: 0, name: 'Sin Datos'}];
+    const colors = getThemeColors();
 
-    chart.setOption({ 
-        tooltip: { trigger: 'item', formatter: function(params) { const val = isCurrency ? fmtUSDC(params.value) : fmtInt(params.value); return `${params.name}: ${val} (${params.percent}%)`; } }, 
-        legend: { orient: 'vertical', left: '0%', top: 'center', itemGap: 10, textStyle: { fontSize: 11, color: '#6b7280' } }, 
-        series: [{ type: 'pie', radius: ['40%', '80%'], center: ['65%', '50%'], label: { show: false, position: 'center' }, emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold' } }, data: chartData }] 
-    });
+    // 2. DETECCIÓ MÒBIL: Ajustem disseny segons pantalla
+    const isMobile = window.innerWidth < 768; // Menys de 768px és mòbil/tablet vertical
+
+    // Configuració dinàmica
+    const option = {
+        // El tooltip es manté igual
+        tooltip: { 
+            trigger: 'item', 
+            formatter: function(params) { 
+                const val = isCurrency ? fmtUSDC(params.value) : fmtInt(params.value); 
+                return `${params.name}: ${val} (${params.percent}%)`; 
+            } 
+        },
+        // Llegenda: Al costat en PC, a sota en Mòbil (per evitar talls)
+        legend: { 
+            show: true,
+            orient: isMobile ? 'horizontal' : 'vertical', 
+            left: isMobile ? 'center' : '0%', 
+            top: isMobile ? 'bottom' : 'center', // A sota en mòbil
+            itemGap: 10, 
+            textStyle: { fontSize: 11, color: colors.text } 
+        },
+        series: [{ 
+            type: 'pie', 
+            // Radi i Centre ajustats per a mòbil
+            radius: isMobile ? ['35%', '60%'] : ['40%', '80%'], 
+            center: isMobile ? ['50%', '45%'] : ['60%', '50%'], 
+            
+            avoidLabelOverlap: false,
+            label: { show: false, position: 'center' }, 
+            emphasis: { 
+                label: { 
+                    show: true, 
+                    fontSize: isMobile ? 14 : 16, // Text una mica més petit en mòbil
+                    fontWeight: 'bold', 
+                    color: colors.text 
+                } 
+            }, 
+            // La vora del mateix color que el fons fa efecte de separació net
+            itemStyle: { 
+                borderColor: colors.bg, 
+                borderWidth: 2 
+            }, 
+            data: chartData 
+        }] 
+    };
+    
+    // 3. ACTUALITZACIÓ SUAU: setOption fa la màgia sense esborrar
+    chart.setOption(option);
 }
 
-// Nueva implementación con Lightweight Charts (TradingView) para líneas de Balance
+// --- LIGHTWEIGHT CHARTS (Línia Balance) ---
 export function renderLineChart(domId, data, color) {
-    if (typeof LightweightCharts === 'undefined') {
-        console.error("LightweightCharts no está cargado. Revisa tu conexión.");
-        return;
-    }
+    if (typeof LightweightCharts === 'undefined') return;
 
     const dom = document.getElementById(domId);
     if (!dom) return;
     if (!data || data.length === 0) return;
 
     dom.style.position = 'relative';
+    const colors = getThemeColors();
 
     if (!chartInstances[domId]) {
         dom.innerHTML = ''; 
         const chart = LightweightCharts.createChart(dom, {
-            layout: { background: { color: 'transparent' }, textColor: '#333' },
-            grid: { vertLines: { color: '#f0f3fa' }, horzLines: { color: '#f0f3fa' } },
-            rightPriceScale: { 
-                borderVisible: false,
-                scaleMargins: { top: 0.1, bottom: 0.1 } 
-            },
+            layout: { background: { type: 'solid', color: colors.bg }, textColor: colors.text },
+            grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
+            rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.1 } },
             timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
             handleScroll: { mouseWheel: false, pressedMouseMove: false },
             handleScale: { axisPressedMouseMove: false, mouseWheel: false, pinch: false }
         });
 
         const series = chart.addAreaSeries({
-            lineColor: color,
-            topColor: color, 
-            bottomColor: 'rgba(255, 255, 255, 0)',
-            lineWidth: 2,
+            lineColor: color, topColor: color, bottomColor: 'rgba(255, 255, 255, 0)', lineWidth: 2,
         });
 
         chartInstances[domId] = { chart, series };
@@ -64,29 +128,27 @@ export function renderLineChart(domId, data, color) {
             chart.applyOptions({ width, height });
             chart.timeScale().fitContent(); 
         }).observe(dom);
+    } else {
+        // Actualitzem colors si cal (per canvi de tema)
+        chartInstances[domId].chart.applyOptions({
+            layout: { background: { type: 'solid', color: colors.bg }, textColor: colors.text },
+            grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } }
+        });
     }
 
-    const formattedData = data.map(d => ({
-        time: d[0] / 1000, 
-        value: d[1]
-    }));
-
+    const formattedData = data.map(d => ({ time: d[0] / 1000, value: d[1] }));
     const uniqueData = [];
     const seenTimes = new Set();
     formattedData.sort((a, b) => a.time - b.time);
-    
     formattedData.forEach(item => {
-        if (!seenTimes.has(item.time)) {
-            seenTimes.add(item.time);
-            uniqueData.push(item);
-        }
+        if (!seenTimes.has(item.time)) { seenTimes.add(item.time); uniqueData.push(item); }
     });
 
     chartInstances[domId].series.setData(uniqueData);
     chartInstances[domId].chart.timeScale().fitContent();
 }
 
-// Implementación DUAL OPTIMIZADA (Velas o Línea)
+// --- LIGHTWEIGHT CHARTS (Velas / Principal) ---
 export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], chartType = 'candles') {
     if (typeof LightweightCharts === 'undefined') return;
 
@@ -96,59 +158,32 @@ export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], c
     if (!data || data.length === 0) return;
 
     dom.style.position = 'relative';
+    const colors = getThemeColors();
 
-    // 1. Crear gráfico solo si no existe
     if (!chartInstances[domId]) {
         dom.innerHTML = '';
         const chart = LightweightCharts.createChart(dom, {
-            layout: { background: { color: '#ffffff' }, textColor: '#333' },
-            grid: { vertLines: { color: '#f0f3fa' }, horzLines: { color: '#f0f3fa' } },
+            layout: { background: { type: 'solid', color: colors.bg }, textColor: colors.text },
+            grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            
-            // CONFIGURACIÓ PER SEPARAR ETIQUETES
-            leftPriceScale: {
-                visible: true,
-                borderColor: '#d1d4dc',
-                scaleMargins: { top: 0.1, bottom: 0.1 }
-            },
-            rightPriceScale: {
-                visible: true,
-                borderColor: '#d1d4dc',
-                textColor: 'rgba(255, 255, 255, 0)', // Text invisible
-                scaleMargins: { top: 0.1, bottom: 0.1 }
-            },
-            timeScale: { 
-                borderColor: '#d1d4dc', 
-                timeVisible: true, 
-                secondsVisible: false,
-                rightOffset: 2, 
-            },
+            leftPriceScale: { visible: true, borderColor: colors.border, scaleMargins: { top: 0.1, bottom: 0.1 } },
+            rightPriceScale: { visible: true, borderColor: colors.border, textColor: 'rgba(255, 255, 255, 0)', scaleMargins: { top: 0.1, bottom: 0.1 } },
+            timeScale: { borderColor: colors.border, timeVisible: true, secondsVisible: false, rightOffset: 2 },
         });
 
         const mainSeries = chart.addCandlestickSeries({
-            upColor: '#0ecb81', downColor: '#f6465d',
-            borderUpColor: '#0ecb81', borderDownColor: '#f6465d',
-            wickUpColor: '#0ecb81', wickDownColor: '#f6465d',
+            upColor: colors.up, downColor: colors.down, 
+            borderUpColor: colors.up, borderDownColor: colors.down, 
+            wickUpColor: colors.up, wickDownColor: colors.down,
             priceScaleId: 'right' 
         });
 
         const axisSeries = chart.addLineSeries({
-            color: 'rgba(0,0,0,0)', 
-            lineWidth: 1,
-            priceScaleId: 'left',
-            crosshairMarkerVisible: false,
-            lastValueVisible: false,
-            priceLineVisible: false
+            color: 'rgba(0,0,0,0)', lineWidth: 1, priceScaleId: 'left', crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false
         });
 
-        // ESTAT INICIAL
         chartInstances[domId] = { 
-            chart, 
-            mainSeries,
-            axisSeries,
-            activeType: 'candles',
-            activeLines: [],
-            initialZoomDone: false // BANDERA DE CONTROL DE ZOOM
+            chart, mainSeries, axisSeries, activeType: 'candles', activeLines: [], initialZoomDone: false 
         };
 
         new ResizeObserver(entries => {
@@ -156,27 +191,28 @@ export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], c
             const { width, height } = entries[0].contentRect;
             chart.applyOptions({ width, height });
         }).observe(dom);
+    } else {
+        // Actualitzem colors
+        chartInstances[domId].chart.applyOptions({
+            layout: { background: { type: 'solid', color: colors.bg }, textColor: colors.text },
+            grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
+            leftPriceScale: { borderColor: colors.border },
+            rightPriceScale: { borderColor: colors.border },
+            timeScale: { borderColor: colors.border }
+        });
     }
 
     const { chart, axisSeries } = chartInstances[domId];
 
-    // 2. Gestionar cambio de tipo
+    // Canvi de tipus
     if (chartInstances[domId].activeType !== chartType) {
         chart.removeSeries(chartInstances[domId].mainSeries);
-        
         let newSeries;
         if (chartType === 'line') {
-            newSeries = chart.addAreaSeries({
-                lineColor: '#2962FF', topColor: 'rgba(41, 98, 255, 0.3)', bottomColor: 'rgba(41, 98, 255, 0)', lineWidth: 2,
-                priceScaleId: 'right'
-            });
+            newSeries = chart.addAreaSeries({ lineColor: '#2962FF', topColor: 'rgba(41, 98, 255, 0.3)', bottomColor: 'rgba(41, 98, 255, 0)', lineWidth: 2, priceScaleId: 'right' });
         } else {
-            newSeries = chart.addCandlestickSeries({
-                upColor: '#0ecb81', downColor: '#f6465d', borderUpColor: '#0ecb81', borderDownColor: '#f6465d', wickUpColor: '#0ecb81', wickDownColor: '#f6465d',
-                priceScaleId: 'right'
-            });
+            newSeries = chart.addCandlestickSeries({ upColor: colors.up, downColor: colors.down, borderUpColor: colors.up, borderDownColor: colors.down, wickUpColor: colors.up, wickDownColor: colors.down, priceScaleId: 'right' });
         }
-        
         chartInstances[domId].mainSeries = newSeries;
         chartInstances[domId].activeType = chartType;
         chartInstances[domId].activeLines = [];
@@ -184,64 +220,41 @@ export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], c
 
     const mainSeries = chartInstances[domId].mainSeries;
 
-    // 3. Formatear datos
+    // Dades
     const formattedData = data.map(d => {
         const dateParts = d[0].split(/[- :]/); 
         const dateObj = new Date(dateParts[0], dateParts[1]-1, dateParts[2], dateParts[3], dateParts[4]);
-        const timeVal = dateObj.getTime() / 1000;
-        return {
-            time: timeVal,
-            open: parseFloat(d[1]), high: parseFloat(d[4]), low: parseFloat(d[3]), close: parseFloat(d[2]),
-            value: parseFloat(d[2]) 
-        };
+        return { time: dateObj.getTime() / 1000, open: parseFloat(d[1]), high: parseFloat(d[4]), low: parseFloat(d[3]), close: parseFloat(d[2]), value: parseFloat(d[2]) };
     });
 
     const uniqueData = [];
     const seenTimes = new Set();
     formattedData.sort((a, b) => a.time - b.time);
     formattedData.forEach(item => {
-        if (!seenTimes.has(item.time)) {
-            seenTimes.add(item.time);
-            uniqueData.push(item);
-        }
+        if (!seenTimes.has(item.time)) { seenTimes.add(item.time); uniqueData.push(item); }
     });
 
-    // 4. Actualizar datos
     mainSeries.setData(uniqueData);
-    
-    const lineData = uniqueData.map(d => ({ time: d.time, value: d.close }));
-    axisSeries.setData(lineData);
+    axisSeries.setData(uniqueData.map(d => ({ time: d.time, value: d.close })));
 
-    // 5. Gestionar Línies
-    chartInstances[domId].activeLines.forEach(line => {
-        mainSeries.removePriceLine(line);
-    });
+    // Línies
+    chartInstances[domId].activeLines.forEach(line => mainSeries.removePriceLine(line));
     chartInstances[domId].activeLines = [];
 
-    // Pintar Órdenes Activas
     activeOrders.forEach(o => {
         const isBuy = o.side === 'buy';
         const line = mainSeries.createPriceLine({
-            price: parseFloat(o.price),
-            color: isBuy ? '#0ecb81' : '#f6465d',
-            lineWidth: 2,
-            lineStyle: LightweightCharts.LineStyle.Solid,
-            axisLabelVisible: true,
-            title: (isBuy ? 'C' : 'V') + ` ${fmtInt(o.amount)}`,
+            price: parseFloat(o.price), color: isBuy ? colors.up : colors.down, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: true, title: (isBuy ? 'C' : 'V') + ` ${fmtInt(o.amount)}`,
         });
         chartInstances[domId].activeLines.push(line);
     });
     
-    // 6. CONTROL DEL ZOOM (NOMÉS LA PRIMERA VEGADA O RESET)
+    // Zoom Inicial
     if (!chartInstances[domId].initialZoomDone) {
         const visibleRange = 100;
         const totalData = uniqueData.length;
-        
         if (totalData > visibleRange) {
-            chart.timeScale().setVisibleLogicalRange({
-                from: totalData - visibleRange,
-                to: totalData
-            });
+            chart.timeScale().setVisibleLogicalRange({ from: totalData - visibleRange, to: totalData });
         } else {
             chart.timeScale().fitContent();
         }
@@ -249,10 +262,23 @@ export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], c
     }
 }
 
-// --- FUNCIÓ NOVA PER RESETEJAR ZOOM ---
+// Reset Zoom
 export function resetChartZoom(safeSym) {
     const domId = `chart-${safeSym}`;
     if (chartInstances[domId]) {
-        chartInstances[domId].initialZoomDone = false;
+        chartInstances[domId].initialZoomDone = false; 
+    }
+}
+
+// Destrucció total
+export function destroyChart(safeSym) {
+    const domId = `chart-${safeSym}`;
+    if (chartInstances[domId]) {
+        try {
+            chartInstances[domId].chart.remove();
+            delete chartInstances[domId];
+            const dom = document.getElementById(domId);
+            if(dom) dom.innerHTML = '';
+        } catch(e) { console.log(e); }
     }
 }

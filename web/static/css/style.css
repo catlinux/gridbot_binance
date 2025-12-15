@@ -1,27 +1,66 @@
 /* Arxiu: gridbot_binance/web/static/css/style.css */
-body { background-color: #f3f4f6; color: #1f2937; font-family: 'Segoe UI', system-ui, sans-serif; padding-bottom: 60px; }
-.navbar { background: #1e293b; }
-.nav-tabs .nav-link { color: #64748b; background: #e2e8f0; margin-right: 2px; border: none; font-weight: 600; }
-.nav-link.active { color: #0f172a; background: #fff; border-top: 3px solid #3b82f6; }
-.tab-content { background: white; padding: 25px; border-radius: 0 0 12px 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-.card { border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px; }
-.card-header { background: #fff; border-bottom: 1px solid #e5e7eb; font-weight: 700; color: #374151; padding: 1rem; }
-.text-buy { color: #0ecb81; } .text-sell { color: #f6465d; }
-.bg-buy { background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
-.bg-sell { background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-.chart-container { height: 450px; width: 100%; }
-.chart-pie { height: 400px; width: 100%; }
-.stat-val { font-size: 1.5rem; font-weight: 800; display: block; }
-.stat-lbl { font-size: 0.75rem; text-transform: uppercase; color: #6b7280; font-weight: 600; }
-.border-l-session { border-left: 4px solid #3b82f6; } 
-.border-l-global { border-left: 4px solid #4b5563; } 
-.tf-btn { font-size: 0.75rem; padding: 2px 8px; margin-left: 2px; }
-.tf-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
-.form-label { font-weight: 600; font-size: 0.85rem; color: #4b5563; }
-.coin-card { transition: all 0.2s; }
-.coin-card:hover { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-color: #cbd5e1; }
-.coin-disabled { opacity: 0.6; background-color: #f9fafb; }
-.input-group-text { font-size: 0.85rem; background-color: #f3f4f6; }
-#config-editor { font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; background-color: #1e1e1e; color: #d4d4d4; border: 1px solid #333; border-radius: 6px; padding: 15px; width: 100%; height: 600px; resize: vertical; white-space: pre; tab-size: 2; }
-#config-msg { display: none; margin-top: 10px; }
-.section-title { font-size: 0.85rem; color: #9ca3af; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+
+/* --- ESTRUCTURA GENERAL --- */
+
+/* Capçalera fixa (Sticky) */
+.navbar {
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+    width: 100%;
+}
+
+/* Layout */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.main-content {
+    flex: 1;
+    padding-top: 20px;
+}
+
+/* Gràfics */
+.chart-container {
+    position: relative;
+    height: 350px;
+    width: 100%;
+    overflow: hidden;
+}
+.chart-pie {
+    height: 320px;
+    width: 100%;
+}
+
+/* Scrollbars moderns */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background-color: #adb5bd;
+    border-radius: 4px;
+}
+
+/* Utilitats Generals */
+.stat-val { font-weight: 700; }
+.text-buy { color: #0ecb81; }
+.text-sell { color: #f6465d; }
+.bg-buy { background-color: rgba(14, 203, 129, 0.1); color: #0ecb81; border: 1px solid rgba(14, 203, 129, 0.3); }
+.bg-sell { background-color: rgba(246, 70, 93, 0.1); color: #f6465d; border: 1px solid rgba(246, 70, 93, 0.3); }
+
+/* --- ESTATS DESACTIVATS (BASE) --- */
+.card-disabled {
+    pointer-events: none;
+    opacity: 0.6;
+}
+.card-disabled .card-header, 
+.card-disabled .form-check-input {
+    pointer-events: auto;
+    opacity: 1;
+}

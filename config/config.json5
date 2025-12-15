@@ -30,11 +30,11 @@
       "symbol": "ETH/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 12,
+        "grids_quantity": 14,
         "amount_per_grid": 10,
-        "grid_spread": 0.7,
+        "grid_spread": 0.6,
         "start_mode": "buy_1",
-        "strategy_profile": "manual",
+        "strategy_profile": "moderate",
         "trailing_enabled": true
       }
     },
@@ -54,17 +54,17 @@
       "symbol": "SOL/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 8,
+        "grids_quantity": 14,
         "amount_per_grid": 10,
-        "grid_spread": 0.8,
+        "grid_spread": 0.6,
         "start_mode": "buy_1",
-        "strategy_profile": "manual",
+        "strategy_profile": "moderate",
         "trailing_enabled": true
       }
     },
     {
       "symbol": "ADA/USDC",
-      "enabled": true,
+      "enabled": false,
       "strategy": {
         "grids_quantity": 8,
         "amount_per_grid": 10,
@@ -78,11 +78,11 @@
       "symbol": "XRP/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 10,
+        "grids_quantity": 14,
         "amount_per_grid": 10,
-        "grid_spread": 0.8,
+        "grid_spread": 0.6,
         "start_mode": "buy_1",
-        "strategy_profile": "manual",
+        "strategy_profile": "moderate",
         "trailing_enabled": true
       }
     },
@@ -90,11 +90,11 @@
       "symbol": "DOGE/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 10,
+        "grids_quantity": 14,
         "amount_per_grid": 10,
-        "grid_spread": 0.8,
+        "grid_spread": 0.6,
         "start_mode": "buy_1",
-        "strategy_profile": "manual",
+        "strategy_profile": "moderate",
         "trailing_enabled": true
       }
     },

@@ -1,0 +1,167 @@
+/* Arxiu: gridbot_binance/web/static/css/themes/light.css */
+/* =========================================
+   TEMA: ORIGINAL (LIGHT / CLASSIC)
+   ========================================= */
+
+/* --- 1. FONS I FONTS ORIGINALS --- */
+body {
+    background-color: #f0f2f5; /* Gris molt suau de fons */
+    color: #212529;
+    /* Font original de Bootstrap (la que es veu a les imatges) */
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* --- 2. NAVBAR ORIGINAL --- */
+.navbar {
+    background-color: #212529;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+/* --- 3. PESTANYES (TABS) - RECUPERANT L'ESTIL CLÀSSIC --- */
+.nav-tabs {
+    border-bottom: 1px solid #dee2e6;
+    background-color: transparent; /* El fons de la barra és transparent */
+    padding-left: 0;
+}
+
+.nav-tabs .nav-link {
+    margin-bottom: -1px;
+    background-color: #e9ecef; /* Fons GRIS per les inactives */
+    border: 1px solid #dee2e6;
+    color: #495057; /* Text gris fosc */
+    margin-right: 4px;
+    border-radius: 4px 4px 0 0; /* Arrodonides a dalt */
+    font-weight: 600;
+    padding: 10px 15px;
+    font-size: 0.9rem;
+    
+    /* Afegit per alinear icona i text */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nav-tabs .nav-link:hover {
+    background-color: #dfe1e5;
+    border-color: #dee2e6;
+    color: #212529;
+}
+
+/* Pestanya Activa: Blanca i connectada al contingut */
+.nav-tabs .nav-link.active {
+    color: #000;
+    background-color: #fff;
+    border-color: #dee2e6 #dee2e6 #fff; /* Vora inferior blanca per "obrir" */
+    font-weight: 700;
+    border-top: 3px solid transparent; /* Per mantenir alçada */
+}
+
+/* --- ICONES DE CRIPTOMONEDES (NOU) --- */
+.coin-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: 0;
+}
+
+/* El contingut és blanc */
+.tab-content {
+    background-color: transparent;
+    padding-top: 15px;
+}
+
+/* --- 4. TARGETES (CARDS) --- */
+.card {
+    background-color: #fff;
+    border: 1px solid rgba(0,0,0,.125);
+    border-radius: 0.5rem;
+    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15); /* Ombra suau original */
+}
+
+.card-header {
+    background-color: #f8f9fa; /* Capçalera gris molt clareta */
+    border-bottom: 1px solid rgba(0,0,0,.125);
+    color: #212529;
+    font-weight: 600;
+}
+
+.card-body {
+    color: #212529;
+}
+
+/* --- 5. DETALLS ESPECÍFICS (Bordes laterals i Títols) --- */
+
+/* Vora blava gruixuda a l'esquerra (Benefici Sessió) */
+.border-l-session {
+    border-left: 0.25rem solid #4e73df !important; /* Blau tipus Dashboard */
+}
+
+/* Vora grisa gruixuda a l'esquerra (Benefici Global) */
+.border-l-global {
+    border-left: 0.25rem solid #858796 !important; /* Gris fosc */
+}
+
+/* Títols de Secció (Amb línia discontínua) */
+.section-title {
+    color: #858796;
+    border-bottom: 1px dashed #d1d3e2; /* Línia discontínua */
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    margin-top: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+    display: block;
+}
+
+/* Icona del títol (el llamp) */
+.section-title i {
+    color: #4e73df; /* Color accent blau/lila */
+}
+
+/* --- 6. TAULES --- */
+.table {
+    color: #212529;
+    background-color: #fff;
+}
+.table thead th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #e3e6f0;
+    color: #4e73df; /* Capçaleres en blau (comun en temes admin light) o gris fosc */
+    font-weight: 700;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+}
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0,0,0,.02);
+}
+.table-hover tbody tr:hover {
+    background-color: rgba(0,0,0,.05);
+}
+
+/* --- 7. INPUTS I FORMULARIS --- */
+.form-control, .form-select, .input-group-text {
+    background-color: #fff;
+    border: 1px solid #d1d3e2;
+    color: #6e707e;
+}
+.form-control:focus {
+    border-color: #bac8f3;
+    box-shadow: 0 0 0 0.2rem rgba(78,115,223,.25);
+}
+.text-muted {
+    color: #858796 !important;
+}
+
+/* --- 8. FIX: Targetes Desactivades en mode Clar --- */
+.card-disabled {
+    background-color: #eaecf4 !important; /* Gris més fosc per indicar desactivat */
+    opacity: 0.7;
+    border-color: #d1d3e2 !important;
+}
+.card-disabled .card-header {
+    background-color: #d1d3e2 !important;
+    color: #858796 !important;
+}

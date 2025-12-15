@@ -11,7 +11,8 @@ export async function loadConfigForm() {
         const data = await res.json();
         currentConfigObj = JSON5.parse(data.content);
         
-        document.getElementById('sys-cycle').value = currentConfigObj.system.cycle_delay;
+        const sysCycle = document.getElementById('sys-cycle');
+        if (sysCycle) sysCycle.value = currentConfigObj.system.cycle_delay;
         
         if (document.getElementById('sys-testnet')) {
             const isTest = currentConfigObj.system.use_testnet !== undefined ? currentConfigObj.system.use_testnet : true;
@@ -24,17 +25,21 @@ export async function loadConfigForm() {
         }
 
         const container = document.getElementById('coins-config-container');
+        if (!container) return;
+        
         container.innerHTML = '';
         currentConfigObj.pairs.forEach((pair, index) => {
             const strategy = pair.strategy || currentConfigObj.default_strategy;
             const isEnabled = pair.enabled;
-            const cardClass = isEnabled ? '' : 'coin-disabled';
+            // Canvi: Unifiquem a 'card-disabled' per compatibilitat amb CSS fosc
+            const cardClass = isEnabled ? '' : 'card-disabled';
             const checked = isEnabled ? 'checked' : '';
             
             const startMode = strategy.start_mode || 'wait';
             const profile = strategy.strategy_profile || 'manual';
             const trailing = strategy.trailing_enabled === true; 
             
+            // ESTRUCTURA HTML ORIGINAL RESTAURADA
             const html = `
                 <div class="col-md-6 col-xl-4 mb-4">
                     <div class="card h-100 coin-card ${cardClass}" id="card-pair-${index}">
@@ -42,13 +47,14 @@ export async function loadConfigForm() {
                             <span class="fw-bold fs-5">${pair.symbol}</span>
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" role="switch" id="enable-${index}" ${checked} onchange="toggleCard(${index})">
-                                <label class="form-check-label fw-bold" for="enable-${index}">${isEnabled ? 'ON' : 'OFF'}</label>
+                                <label class="form-check-label fw-bold" for="enable-${index}" id="lbl-${index}">${isEnabled ? 'ON' : 'OFF'}</label>
                             </div>
                         </div>
                         
                         <div class="card-body">
                             <div class="mb-3 p-2 bg-light border rounded text-center" id="rsi-box-${index}">
-                                <small>Cargando RSI...</small>
+                                <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+                                <small class="ms-2">Cargando RSI...</small>
                             </div>
                             <input type="hidden" id="profile-${index}" value="${profile}">
                             
@@ -141,16 +147,21 @@ export async function analyzeSymbol(symbol, index, currentProfile) {
 
 export function changeRsiTf(symbol, index, profile, tf) {
     rsiTimeframeCache[index] = tf;
+    const box = document.getElementById(`rsi-box-${index}`);
+    if(box) box.innerHTML = '<div class="spinner-border spinner-border-sm text-secondary"></div>';
     analyzeSymbol(symbol, index, profile);
 }
 
 export function updateButtons(index, activeProfile) {
-    document.getElementById(`profile-${index}`).value = activeProfile;
+    const hiddenInput = document.getElementById(`profile-${index}`);
+    if(hiddenInput) hiddenInput.value = activeProfile;
+
     const bC = document.getElementById(`btn-cons-${index}`);
     const bM = document.getElementById(`btn-mod-${index}`);
     const bA = document.getElementById(`btn-agg-${index}`);
     const bMan = document.getElementById(`btn-man-${index}`);
     
+    // Reset classes
     if(bC) bC.className = `btn btn-sm flex-fill ${activeProfile==='conservative' ? 'btn-success' : 'btn-outline-dark'}`;
     if(bM) bM.className = `btn btn-sm flex-fill ${activeProfile==='moderate' ? 'btn-primary' : 'btn-outline-dark'}`;
     if(bA) bA.className = `btn btn-sm flex-fill ${activeProfile==='aggressive' ? 'btn-danger' : 'btn-outline-dark'}`;
@@ -173,13 +184,21 @@ export function setManual(index) { updateButtons(index, 'manual'); }
 export function toggleCard(index) {
     const checkbox = document.getElementById(`enable-${index}`);
     const card = document.getElementById(`card-pair-${index}`);
-    if (checkbox.checked) { card.classList.remove('coin-disabled'); } 
-    else { card.classList.add('coin-disabled'); }
+    const label = document.getElementById(`lbl-${index}`);
+    
+    if (checkbox.checked) { 
+        card.classList.remove('card-disabled'); 
+        if(label) label.innerText = "ON";
+    } else { 
+        card.classList.add('card-disabled'); 
+        if(label) label.innerText = "OFF";
+    }
 }
 
 export async function saveConfigForm() {
     if (!currentConfigObj) return;
-    currentConfigObj.system.cycle_delay = parseInt(document.getElementById('sys-cycle').value);
+    const sysCycle = document.getElementById('sys-cycle');
+    if(sysCycle) currentConfigObj.system.cycle_delay = parseInt(sysCycle.value);
     
     const tNet = document.getElementById('sys-testnet'); if(tNet) currentConfigObj.system.use_testnet = tNet.checked;
     const tTg = document.getElementById('sys-telegram'); if(tTg) currentConfigObj.system.telegram_enabled = tTg.checked;
@@ -189,8 +208,12 @@ export async function saveConfigForm() {
         const amount = parseFloat(document.getElementById(`amount-${index}`).value);
         const qty = parseInt(document.getElementById(`qty-${index}`).value);
         const spread = parseFloat(document.getElementById(`spread-${index}`).value);
-        const profile = document.getElementById(`profile-${index}`).value;
-        const trailing = document.getElementById(`trailing-${index}`).checked;
+        
+        const profileInput = document.getElementById(`profile-${index}`);
+        const profile = profileInput ? profileInput.value : 'manual';
+        
+        const trailingCheck = document.getElementById(`trailing-${index}`);
+        const trailing = trailingCheck ? trailingCheck.checked : false;
         
         let startMode = 'wait';
         if (document.getElementById(`sm-buy1-${index}`).checked) startMode = 'buy_1';
@@ -212,12 +235,25 @@ export async function saveConfigForm() {
     try {
         const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: jsonString }) });
         const data = await res.json();
-        msgBox.style.display = 'block';
+        
+        if(msgBox) msgBox.style.display = 'block';
         if (res.ok) { 
-            msgBox.className = 'alert alert-success'; msgBox.innerHTML = '<i class="fa-solid fa-check-circle"></i> Guardado! Recargando...'; 
+            if(msgBox) {
+                msgBox.className = 'alert alert-success'; msgBox.innerHTML = '<i class="fa-solid fa-check-circle"></i> Guardado! Recargando...'; 
+            }
             setTimeout(() => { location.reload(); }, 1500); 
         } else { 
-            msgBox.className = 'alert alert-danger'; msgBox.innerText = 'Error: ' + data.detail; 
+            if(msgBox) {
+                msgBox.className = 'alert alert-danger'; msgBox.innerText = 'Error: ' + data.detail; 
+            }
         }
     } catch (e) { alert("Error al guardar."); }
 }
+
+// EXPORTEM FUNCIONS A WINDOW PERQUE FUNCIONIN ELS ONCLICK
+window.loadConfigForm = loadConfigForm;
+window.saveConfigForm = saveConfigForm;
+window.toggleCard = toggleCard;
+window.applyStrategy = applyStrategy;
+window.setManual = setManual;
+window.changeRsiTf = changeRsiTf;

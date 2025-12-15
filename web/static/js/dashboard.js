@@ -1,5 +1,6 @@
+// Arxiu: gridbot_binance/web/static/js/dashboard.js
 import { fmtUSDC, fmtPrice, fmtInt, fmtCrypto, fmtPct, updateColorValue } from './utils.js';
-import { renderDonut, renderLineChart, renderCandleChart, resetChartZoom } from './charts.js';
+import { renderDonut, renderLineChart, renderCandleChart, resetChartZoom, destroyChart } from './charts.js';
 import { loadConfigForm, saveConfigForm, toggleCard, changeRsiTf, applyStrategy, setManual, analyzeSymbol } from './config.js';
 
 // --- ESTAT GLOBAL ---
@@ -32,19 +33,21 @@ window.clearHistory = clearHistory;
 window.closeOrder = closeOrder;
 window.filterHistory = filterHistory; 
 window.liquidateAsset = liquidateAsset;
-
-// Noves exportacions
 window.resetGlobalChart = resetGlobalChart;
 window.resetSessionChart = resetSessionChart;
 window.resetGlobalPnL = resetGlobalPnL;
 window.refreshOrders = refreshOrders;
 window.resetCoinSession = resetCoinSession;
 window.resetCoinGlobal = resetCoinGlobal;
+window.changeTheme = changeTheme;
 
 // --- FUNCIONS PRINCIPALS ---
 
 async function init() {
     try {
+        const savedTheme = localStorage.getItem('gridbot_theme') || 'light';
+        changeTheme(savedTheme, false);
+
         const res = await fetch('/api/status');
         if (!res.ok) return;
         const data = await res.json();
@@ -69,15 +72,28 @@ function syncTabs(activePairs) {
     activePairs.forEach(sym => ensureTabExists(sym));
 }
 
+// --- MODIFICACIÓ: ICONES DE MONEDES ---
 function ensureTabExists(symbol) {
     const safe = symbol.replace('/', '_');
     if (document.getElementById(`content-${safe}`)) return;
     
+    // 1. Extraiem el nom base (ex: "BTC" de "BTC/USDC") i el passem a minúscules
+    const baseCoin = symbol.split('/')[0].toLowerCase();
+    // 2. URL del CDN d'icones (utilitzem Cryptologos via jsDelivr)
+    const iconUrl = `https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@1a63530be6e374711a8554f31b17e4cb92c25fa5/128/color/${baseCoin}.png`;
+
     const tabList = document.getElementById('mainTabs');
     
     const li = document.createElement('li');
     li.className = 'nav-item';
-    li.innerHTML = `<button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">${symbol}</button>`;
+    
+    // 3. Creem el botó amb la imatge. Si falla la imatge (onerror), posem una icona genèrica.
+    li.innerHTML = `
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">
+            <img src="${iconUrl}" class="coin-icon" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block'">
+            <i class="fa-brands fa-bitcoin coin-fallback" style="display:none"></i>
+            <span>${symbol}</span>
+        </button>`;
     
     tabList.appendChild(li);
 
@@ -94,7 +110,7 @@ function ensureTabExists(symbol) {
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <div class="d-flex align-items-center">
                             <span class="d-none d-sm-inline me-2">Gráfico</span>
-                            <div class="btn-group me-2">
+                            <div class="btn-group me-2 tf-controls">
                                 <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('1m')">1m</button>
                                 <button class="btn btn-outline-secondary btn-sm tf-btn" onclick="setTimeframe('5m')">5m</button>
                                 <button class="btn btn-outline-secondary btn-sm tf-btn active" onclick="setTimeframe('15m')">15m</button>
@@ -105,9 +121,15 @@ function ensureTabExists(symbol) {
                                 <button class="btn btn-outline-secondary btn-sm ${btnCandlesActive}" data-chart-type="candles" onclick="setChartType('candles')" title="Velas"><i class="fa-solid fa-chart-simple"></i></button>
                                 <button class="btn btn-outline-secondary btn-sm ${btnLineActive}" data-chart-type="line" onclick="setChartType('line')" title="Línea"><i class="fa-solid fa-chart-line"></i></button>
                             </div>
-                            <button class="btn btn-outline-secondary btn-sm ms-2" onclick="resetZoom('${symbol}')" title="Reset Zoom (Últimas 100)"><i class="fa-solid fa-compress"></i></button>
+                            <button class="btn btn-outline-secondary btn-sm ms-2" onclick="resetZoom('${symbol}')" title="Reset Zoom"><i class="fa-solid fa-compress"></i></button>
                         </div>
-                        <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
+                        <div class="d-flex align-items-center">
+                            <div class="btn-group btn-group-sm me-3">
+                                <button class="btn btn-outline-danger" onclick="resetCoinSession('${symbol}')" title="Reset Sesión">Rst. Sesión</button>
+                                <button class="btn btn-outline-danger" onclick="resetCoinGlobal('${symbol}')" title="Reset Global">Rst. Global</button>
+                            </div>
+                            <span class="fs-5 fw-bold text-primary" id="price-${safe}">--</span>
+                        </div>
                     </div>
                     <div class="card-body p-1"><div id="chart-${safe}" class="chart-container"></div></div>
                 </div>
@@ -125,14 +147,14 @@ function ensureTabExists(symbol) {
                                 <strong>Balance Sesión</strong>
                                 <div class="d-flex align-items-center gap-2">
                                     <b id="sess-pnl-${safe}">--</b>
-                                    <button class="btn btn-xs btn-outline-danger" onclick="resetCoinSession('${symbol}')" title="Reiniciar Sesión solo para ${symbol}"><i class="fa-solid fa-rotate-right"></i></button>
+                                    <button class="btn btn-xs btn-outline-danger" onclick="resetCoinSession('${symbol}')"><i class="fa-solid fa-rotate-right"></i></button>
                                 </div>
                             </li>
                             <li class="list-group-item d-flex justify-content-between align-items-center bg-light">
                                 <strong>Balance Global</strong>
                                 <div class="d-flex align-items-center gap-2">
                                     <b id="glob-pnl-${safe}">--</b>
-                                    <button class="btn btn-xs btn-outline-danger" onclick="resetCoinGlobal('${symbol}')" title="Borrar Histórico Global de ${symbol}"><i class="fa-solid fa-trash-can"></i></button>
+                                    <button class="btn btn-xs btn-outline-danger" onclick="resetCoinGlobal('${symbol}')"><i class="fa-solid fa-trash-can"></i></button>
                                 </div>
                             </li>
                         </ul>
@@ -165,7 +187,11 @@ function setMode(m) {
 function setTimeframe(tf) {
     currentTimeframe = tf;
     document.querySelectorAll('.tf-btn').forEach(b => { b.classList.remove('active'); if(b.innerText.toLowerCase()===tf) b.classList.add('active'); });
-    if(currentMode!=='home' && currentMode!=='config' && currentMode!=='wallet') loadSymbol(currentMode);
+    if(currentMode !== 'home' && currentMode !== 'config' && currentMode !== 'wallet') {
+        const safe = currentMode.replace('/', '_');
+        destroyChart(safe); 
+        loadSymbol(currentMode);
+    }
 }
 
 function setChartType(type) {
@@ -176,7 +202,11 @@ function setChartType(type) {
             btn.classList.add('active');
         }
     });
-    if(currentMode!=='home' && currentMode!=='config' && currentMode!=='wallet') loadSymbol(currentMode);
+    if(currentMode!=='home' && currentMode!=='config' && currentMode!=='wallet') {
+        const safe = currentMode.replace('/', '_');
+        destroyChart(safe);
+        loadSymbol(currentMode);
+    }
 }
 
 function resetZoom(symbol) {
@@ -185,7 +215,6 @@ function resetZoom(symbol) {
     loadSymbol(symbol); 
 }
 
-// --- FUNCIÓ DE FILTRATGE ---
 function filterHistory(hours) {
     const buttons = document.querySelectorAll('.hist-btn');
     buttons.forEach(btn => {
@@ -209,8 +238,6 @@ function filterHistory(hours) {
     renderLineChart('balanceChartGlobal', filteredData, '#3b82f6');
 }
 
-// --- LOADERS ---
-
 async function loadHome() {
     try {
         const res = await fetch('/api/status');
@@ -221,12 +248,11 @@ async function loadHome() {
         let engineBtn = document.getElementById('btn-engine-toggle');
         if (engineBtn) engineBtn.remove(); 
         
-        if(data.status === 'Stopped') {
-            badge.innerText = 'DETENIDO'; badge.className = 'badge bg-danger me-2';
-        } else {
-            badge.innerText = data.status === 'Paused' ? 'PAUSADO' : 'OPERATIVO';
-            badge.className = data.status === 'Paused' ? 'badge bg-warning text-dark me-2' : 'badge bg-success me-2';
-        }
+        const isStopped = data.status === 'Stopped';
+        document.querySelectorAll('.tf-controls').forEach(el => { el.style.display = isStopped ? 'none' : 'inline-flex'; });
+
+        if(isStopped) { badge.innerText = 'DETENIDO'; badge.className = 'badge bg-danger me-2'; }
+        else { badge.innerText = data.status === 'Paused' ? 'PAUSADO' : 'OPERATIVO'; badge.className = data.status === 'Paused' ? 'badge bg-warning text-dark me-2' : 'badge bg-success me-2'; }
 
         document.getElementById('total-balance').innerText = `${fmtUSDC(data.total_usdc_value)} USDC`;
         updateColorValue('dash-profit-session', data.stats.session.profit, ' $');
@@ -234,7 +260,6 @@ async function loadHome() {
         document.getElementById('dash-trades-session').innerText = fmtInt(data.stats.session.trades);
         document.getElementById('dash-coin-session').innerText = data.stats.session.best_coin;
         document.getElementById('dash-uptime-session').innerText = data.stats.session.uptime;
-        
         document.getElementById('dash-trades-total').innerText = fmtInt(data.stats.global.trades);
         document.getElementById('dash-coin-total').innerText = data.stats.global.best_coin;
         document.getElementById('dash-uptime-total').innerText = data.stats.global.uptime;
@@ -259,7 +284,7 @@ async function loadHome() {
 async function loadSymbol(symbol) {
     const safe = symbol.replace('/', '_');
     try {
-        const res = await fetch(`/api/details/${symbol}?timeframe=${currentTimeframe}`);
+        const res = await fetch(`/api/details/${symbol}?timeframe=${currentTimeframe}&_=${Date.now()}`);
         if (!res.ok) return;
         const data = await res.json();
         
@@ -284,274 +309,43 @@ async function loadSymbol(symbol) {
     } catch(e) { console.error(e); }
 }
 
-async function loadWallet() {
-    const tbody = document.getElementById('wallet-table-body');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary"></div></td></tr>';
-    try {
-        const res = await fetch('/api/wallet');
-        const data = await res.json();
-        if(data.length===0) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Sin activos</td></tr>'; return; }
-        
-        tbody.innerHTML = data.map(item => {
-            const freeVal = item.free * item.price;
-            const lockedVal = item.locked * item.price;
-            let btn = (item.asset!=='USDC' && item.asset!=='USDT') ? `<button class="btn btn-sm btn-outline-danger" onclick="liquidateAsset('${item.asset}')">Vender</button>` : '<span class="text-muted small">Base</span>';
-            return `<tr><td class="fw-bold">${item.asset}</td><td>${fmtCrypto(item.free)} <small class="text-muted">(${fmtUSDC(freeVal)}$)</small></td><td class="${item.locked>0?'text-danger':''}">${fmtCrypto(item.locked)} <small class="text-muted">(${fmtUSDC(lockedVal)}$)</small></td><td>${fmtCrypto(item.total)}</td><td class="fw-bold">${fmtUSDC(item.usdc_value)}$</td><td class="text-end">${btn}</td></tr>`;
-        }).join('');
-    } catch(e) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error</td></tr>'; }
-}
+async function loadWallet() { const tbody = document.getElementById('wallet-table-body'); tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary"></div></td></tr>'; try { const res = await fetch('/api/wallet'); const data = await res.json(); if(data.length===0) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Sin activos</td></tr>'; return; } tbody.innerHTML = data.map(item => { const freeVal = item.free * item.price; const lockedVal = item.locked * item.price; let btn = (item.asset!=='USDC' && item.asset!=='USDT') ? `<button class="btn btn-sm btn-outline-danger" onclick="liquidateAsset('${item.asset}')">Vender</button>` : '<span class="text-muted small">Base</span>'; return `<tr><td class="fw-bold">${item.asset}</td><td>${fmtCrypto(item.free)} <small class="text-muted">(${fmtUSDC(freeVal)}$)</small></td><td class="${item.locked>0?'text-danger':''}">${fmtCrypto(item.locked)} <small class="text-muted">(${fmtUSDC(lockedVal)}$)</small></td><td>${fmtCrypto(item.total)}</td><td class="fw-bold">${fmtUSDC(item.usdc_value)}$</td><td class="text-end">${btn}</td></tr>`; }).join(''); } catch(e) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error</td></tr>'; } }
+async function loadGlobalOrders() { try { const res = await fetch('/api/orders'); const orders = await res.json(); const tbody = document.getElementById('global-orders-table'); if(orders.length === 0) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No hay órdenes</td></tr>'; return; } orders.sort((a,b) => a.symbol.localeCompare(b.symbol) || b.price - a.price); tbody.innerHTML = orders.map(o => { const isBuy = o.side === 'buy'; let pnlDisplay = '-', pnlClass = ''; if(!isBuy && o.entry_price > 0) { const pnl = ((o.current_price - o.entry_price)/o.entry_price)*100; pnlDisplay = fmtPct(pnl); pnlClass = pnl>=0 ? 'text-success fw-bold':'text-danger fw-bold'; } return `<tr><td class="fw-bold">${o.symbol}</td><td><span class="badge ${isBuy?'bg-success':'bg-danger'}">${isBuy?'COMPRA':'VENTA'}</span></td><td>${fmtPrice(o.price)}</td><td class="text-muted">${isBuy?'-':fmtPrice(o.entry_price)}</td><td>${fmtPrice(o.current_price)}</td><td class="${pnlClass}">${pnlDisplay}</td><td>${fmtUSDC(o.total_value)}</td><td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="closeOrder('${o.symbol}','${o.id}','${o.side}',${o.amount})"><i class="fa-solid fa-times"></i></button></td></tr>`; }).join(''); } catch(e) {} }
+async function loadBalanceCharts() { try { const res = await fetch('/api/history/balance'); if (!res.ok) return; const data = await res.json(); fullGlobalHistory = data.global; renderLineChart('balanceChartSession', data.session, '#0ecb81'); const activeBtn = document.querySelector('.hist-btn.active'); if(activeBtn && activeBtn.innerText === '24h') filterHistory(24); else if(activeBtn && activeBtn.innerText === '7d') filterHistory(168); else renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); } catch(e) { console.error("Error loading charts", e); } }
+async function closeOrder(s, i, side, a) { const result = await Swal.fire({ title: '¿Cancelar Orden?', text: `${side.toUpperCase()} ${s} - Cantidad: ${a}`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', cancelButtonColor: '#3085d6', confirmButtonText: 'Sí, cancelar' }); if (result.isConfirmed) { postAction('/api/close_order', { symbol: s, order_id: i, side: side, amount: a }); } }
+async function liquidateAsset(a) { const result = await Swal.fire({ title: `¿Liquidar ${a}?`, text: "Se cancelarán las órdenes y se venderá todo a mercado.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, vender todo' }); if (result.isConfirmed) { postAction('/api/liquidate_asset', { asset: a }, loadWallet); } }
+async function clearHistory(s) { const result = await Swal.fire({ title: '¿Borrar Historial?', text: `Se eliminarán los trades antiguos de ${s} de la base de datos.`, icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, borrar' }); if (result.isConfirmed) { postAction('/api/history/clear', { symbol: s }); } }
+async function resetStatistics() { const result = await Swal.fire({ title: '¿RESET TOTAL?', text: "ESTO ES IRREVERSIBLE. Borrará todo el historial y gráficas.", icon: 'error', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, reiniciar todo' }); if (result.isConfirmed) { postAction('/api/reset_stats', {}, () => location.reload()); } }
+async function panicStop() { const result = await Swal.fire({ title: '¿Pausar Operaciones?', text: "El bot dejará de analizar el mercado.", icon: 'warning', showCancelButton: true, confirmButtonText: 'Pausar' }); if (result.isConfirmed) postAction('/api/panic/stop'); }
+async function panicStart() { postAction('/api/panic/start'); }
+async function panicCancel() { const result = await Swal.fire({ title: '¿CANCELAR TODO?', text: "Se borrarán todas las órdenes del Exchange.", icon: 'error', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, cancelar todo' }); if (result.isConfirmed) postAction('/api/panic/cancel_all'); }
+async function panicSell() { const result = await Swal.fire({ title: '¿VENDER TODO?', text: "PELIGRO: Se venderán todas las posiciones a mercado.", icon: 'error', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, vender todo' }); if (result.isConfirmed) postAction('/api/panic/sell_all'); }
+async function startEngine() { const result = await Swal.fire({ title: '¿Arrancar Motor?', text: "Iniciará la operativa automática.", icon: 'question', showCancelButton: true, confirmButtonText: 'Arrancar' }); if (result.isConfirmed) postAction('/api/engine/on'); }
+async function stopEngine() { const result = await Swal.fire({ title: '¿Detener Motor?', text: "Se detendrá el análisis de mercado.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Detener' }); if (result.isConfirmed) postAction('/api/engine/off'); }
+async function resetGlobalChart() { const result = await Swal.fire({ title: '¿Borrar Gráfica Global?', text: "Se eliminará el historial visual del balance.", icon: 'question', showCancelButton: true, confirmButtonText: 'Borrar' }); if (result.isConfirmed) postAction('/api/reset/chart/global'); }
+async function resetSessionChart() { const result = await Swal.fire({ title: '¿Reiniciar Sesión?', text: "Se reiniciará la gráfica de sesión y el contador de PnL de sesión.", icon: 'question', showCancelButton: true, confirmButtonText: 'Reiniciar' }); if (result.isConfirmed) postAction('/api/reset/chart/session'); }
+async function resetGlobalPnL() { const result = await Swal.fire({ title: '¿Borrar Historial PnL?', text: "Se eliminarán todos los registros de trades pasados.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Borrar' }); if (result.isConfirmed) postAction('/api/reset/pnl/global'); }
+async function refreshOrders() { postAction('/api/refresh_orders'); }
+async function resetCoinSession(symbol) { const result = await Swal.fire({ title: `¿Reiniciar Sesión ${symbol}?`, text: "Solo afectará al contador de esta moneda.", icon: 'question', showCancelButton: true, confirmButtonText: 'Reiniciar' }); if (result.isConfirmed) postAction('/api/reset/coin/session', { symbol: symbol }); }
+async function resetCoinGlobal(symbol) { const result = await Swal.fire({ title: `¿Borrar Historial ${symbol}?`, text: "Se eliminarán los trades antiguos de esta moneda.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Borrar' }); if (result.isConfirmed) postAction('/api/reset/coin/global', { symbol: symbol }); }
 
-async function loadGlobalOrders() {
-    try {
-        const res = await fetch('/api/orders');
-        const orders = await res.json();
-        const tbody = document.getElementById('global-orders-table');
-        if(orders.length === 0) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No hay órdenes</td></tr>'; return; }
-        
-        orders.sort((a,b) => a.symbol.localeCompare(b.symbol) || b.price - a.price);
-        
-        tbody.innerHTML = orders.map(o => {
-            const isBuy = o.side === 'buy';
-            let pnlDisplay = '-', pnlClass = '';
-            if(!isBuy && o.entry_price > 0) {
-                const pnl = ((o.current_price - o.entry_price)/o.entry_price)*100;
-                pnlDisplay = fmtPct(pnl); pnlClass = pnl>=0 ? 'text-success fw-bold':'text-danger fw-bold';
-            }
-            return `<tr><td class="fw-bold">${o.symbol}</td><td><span class="badge ${isBuy?'bg-success':'bg-danger'}">${isBuy?'COMPRA':'VENTA'}</span></td><td>${fmtPrice(o.price)}</td><td class="text-muted">${isBuy?'-':fmtPrice(o.entry_price)}</td><td>${fmtPrice(o.current_price)}</td><td class="${pnlClass}">${pnlDisplay}</td><td>${fmtUSDC(o.total_value)}</td><td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="closeOrder('${o.symbol}','${o.id}','${o.side}',${o.amount})"><i class="fa-solid fa-times"></i></button></td></tr>`;
-        }).join('');
-    } catch(e) {}
-}
+async function postAction(url, body={}, cb=null) { try { const res = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) }); const d = await res.json(); if(res.ok) { if(cb) await cb(); else { dataCache={}; await loadHome(); } Swal.fire({title:'Éxito', text:d.message, icon:'success', timer:1500, showConfirmButton:false}); } else Swal.fire('Error', d.detail, 'error'); } catch(e) { Swal.fire('Error', 'Conexión', 'error'); } }
 
-async function loadBalanceCharts() {
-    try {
-        const res = await fetch('/api/history/balance');
-        if (!res.ok) return;
-        const data = await res.json();
-        fullGlobalHistory = data.global; 
-        renderLineChart('balanceChartSession', data.session, '#0ecb81');
-        const activeBtn = document.querySelector('.hist-btn.active');
-        if(activeBtn && activeBtn.innerText === '24h') filterHistory(24);
-        else if(activeBtn && activeBtn.innerText === '7d') filterHistory(168);
-        else renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); 
-
-    } catch(e) { console.error("Error loading charts", e); }
-}
-
-async function closeOrder(s, i, side, a) {
-    const result = await Swal.fire({
-        title: '¿Cancelar Orden?',
-        text: `${side.toUpperCase()} ${s} - Cantidad: ${a}`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        cancelButtonColor: '#3085d6',
-        confirmButtonText: 'Sí, cancelar'
-    });
-    if (result.isConfirmed) {
-        postAction('/api/close_order', { symbol: s, order_id: i, side: side, amount: a });
+function changeTheme(themeName, reloadData = true) {
+    const link = document.getElementById('theme-stylesheet');
+    if (themeName === 'default' || themeName === 'light') {
+        link.href = "/static/css/themes/light.css";
+        localStorage.setItem('gridbot_theme', 'light');
+    } else {
+        link.href = `/static/css/themes/${themeName}.css`; 
+        localStorage.setItem('gridbot_theme', themeName);
     }
-}
-
-async function liquidateAsset(a) {
-    const result = await Swal.fire({
-        title: `¿Liquidar ${a}?`,
-        text: "Se cancelarán las órdenes y se venderá todo a mercado.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        confirmButtonText: 'Sí, vender todo'
-    });
-    if (result.isConfirmed) {
-        postAction('/api/liquidate_asset', { asset: a }, loadWallet);
-    }
-}
-
-async function clearHistory(s) {
-    const result = await Swal.fire({
-        title: '¿Borrar Historial?',
-        text: `Se eliminarán los trades antiguos de ${s} de la base de datos.`,
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Sí, borrar'
-    });
-    if (result.isConfirmed) {
-        postAction('/api/history/clear', { symbol: s });
-    }
-}
-
-async function resetStatistics() {
-    const result = await Swal.fire({
-        title: '¿RESET TOTAL?',
-        text: "ESTO ES IRREVERSIBLE. Borrará todo el historial y gráficas.",
-        icon: 'error',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        confirmButtonText: 'Sí, reiniciar todo'
-    });
-    if (result.isConfirmed) {
-        postAction('/api/reset_stats', {}, () => location.reload());
-    }
-}
-
-async function panicStop() {
-    const result = await Swal.fire({
-        title: '¿Pausar Operaciones?',
-        text: "El bot dejará de analizar el mercado.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Pausar'
-    });
-    if (result.isConfirmed) postAction('/api/panic/stop');
-}
-
-async function panicStart() {
-    postAction('/api/panic/start');
-}
-
-async function panicCancel() {
-    const result = await Swal.fire({
-        title: '¿CANCELAR TODO?',
-        text: "Se borrarán todas las órdenes del Exchange.",
-        icon: 'error',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        confirmButtonText: 'Sí, cancelar todo'
-    });
-    if (result.isConfirmed) postAction('/api/panic/cancel_all');
-}
-
-async function panicSell() {
-    const result = await Swal.fire({
-        title: '¿VENDER TODO?',
-        text: "PELIGRO: Se venderán todas las posiciones a mercado.",
-        icon: 'error',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        confirmButtonText: 'Sí, vender todo'
-    });
-    if (result.isConfirmed) postAction('/api/panic/sell_all');
-}
-
-async function startEngine() {
-    const result = await Swal.fire({
-        title: '¿Arrancar Motor?',
-        text: "Iniciará la operativa automática.",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Arrancar'
-    });
-    if (result.isConfirmed) postAction('/api/engine/on');
-}
-
-async function stopEngine() {
-    const result = await Swal.fire({
-        title: '¿Detener Motor?',
-        text: "Se detendrá el análisis de mercado.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        confirmButtonText: 'Detener'
-    });
-    if (result.isConfirmed) postAction('/api/engine/off');
-}
-
-async function resetGlobalChart() {
-    const result = await Swal.fire({
-        title: '¿Borrar Gráfica Global?',
-        text: "Se eliminará el historial visual del balance.",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Borrar'
-    });
-    if (result.isConfirmed) postAction('/api/reset/chart/global');
-}
-
-async function resetSessionChart() {
-    const result = await Swal.fire({
-        title: '¿Reiniciar Sesión?',
-        text: "Se reiniciará la gráfica de sesión y el contador de PnL de sesión.",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Reiniciar'
-    });
-    if (result.isConfirmed) postAction('/api/reset/chart/session');
-}
-
-async function resetGlobalPnL() {
-    const result = await Swal.fire({
-        title: '¿Borrar Historial PnL?',
-        text: "Se eliminarán todos los registros de trades pasados.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        confirmButtonText: 'Borrar'
-    });
-    if (result.isConfirmed) postAction('/api/reset/pnl/global');
-}
-
-async function refreshOrders() {
-    postAction('/api/refresh_orders');
-}
-
-async function resetCoinSession(symbol) {
-    const result = await Swal.fire({
-        title: `¿Reiniciar Sesión ${symbol}?`,
-        text: "Solo afectará al contador de esta moneda.",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Reiniciar'
-    });
-    if (result.isConfirmed) postAction('/api/reset/coin/session', { symbol: symbol });
-}
-
-async function resetCoinGlobal(symbol) {
-    const result = await Swal.fire({
-        title: `¿Borrar Historial ${symbol}?`,
-        text: "Se eliminarán los trades antiguos de esta moneda.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        confirmButtonText: 'Borrar'
-    });
-    if (result.isConfirmed) postAction('/api/reset/coin/global', { symbol: symbol });
-}
-
-async function postAction(url, body={}, cb=null) {
-    try {
-        const res = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-        const d = await res.json();
-        
-        if(res.ok) { 
-            // 1. PRIMER: Actualitzem la interfície (Badge, taules, etc.)
-            // Fem servir 'await' per assegurar que el DOM canvia ABANS de l'alerta.
-            if(cb) await cb(); 
-            else { 
-                dataCache = {}; 
-                await loadHome(); 
-            } 
-
-            // 2. SEGON: Mostrem l'alerta d'èxit
-            Swal.fire({
-                title: 'Éxito',
-                text: d.message,
-                icon: 'success',
-                timer: 1500,
-                showConfirmButton: false
-            });
-        }
-        else {
-            Swal.fire({
-                title: 'Error',
-                text: d.detail || "Ha ocurrido un error",
-                icon: 'error'
-            });
-        }
-    } catch(e) { 
-        Swal.fire({
-            title: 'Error de Conexión',
-            text: "No se puede conectar con el servidor.",
-            icon: 'error'
-        });
+    
+    if (reloadData) {
+        setTimeout(() => {
+            if (currentMode === 'home') loadHome();
+            else if (currentMode !== 'config' && currentMode !== 'wallet') loadSymbol(currentMode);
+        }, 100);
     }
 }
 
