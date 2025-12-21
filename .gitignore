@@ -1,26 +1,24 @@
-# --- SEGURETAT (Crític) ---
-# Ignorem l'arxiu amb les claus API reals
+#--- SEGURIDAD (Crítico) ---
+#Ignoramos el archivo con las claves reales
 config/.env
 .env
 
-# --- ENTORN VIRTUAL ---
-# No volem pujar les llibreries, es baixen amb requirements.txt
+#--- ENTORNO VIRTUAL ---
 venv/
 env/
 
-# --- PYTHON CACHE ---
-# Arxius temporals que genera Python automàticament
-__pycache__/
+#--- ARCHIVOS TEMPORALES PYTHON ---
+pycache/
 *.py[cod]
 *$py.class
 
-# --- LOGS I ALTRES ---
+#--- LOGS Y OTROS ---
 *.log
 .DS_Store
 .vscode/
 .idea/
 
-# --- Arxius de dades i carpeta nova ---
+#--- DATOS DEL BOT ---
 .db
 bot_data.db
 bot_data.db-wal

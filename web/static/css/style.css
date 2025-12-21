@@ -2,7 +2,7 @@
 
 /* --- ESTRUCTURA GENERAL --- */
 
-/* Capçalera fixa (Sticky) */
+/* Cabecera fija (Sticky) */
 .navbar {
     position: sticky;
     top: 0;
@@ -22,7 +22,7 @@ body {
     padding-top: 20px;
 }
 
-/* Gràfics */
+/* Gráficos */
 .chart-container {
     position: relative;
     height: 350px;
@@ -34,7 +34,7 @@ body {
     width: 100%;
 }
 
-/* Scrollbars moderns */
+/* Scrollbars modernos */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -47,14 +47,14 @@ body {
     border-radius: 4px;
 }
 
-/* Utilitats Generals */
+/* Utilidades Generales */
 .stat-val { font-weight: 700; }
 .text-buy { color: #0ecb81; }
 .text-sell { color: #f6465d; }
 .bg-buy { background-color: rgba(14, 203, 129, 0.1); color: #0ecb81; border: 1px solid rgba(14, 203, 129, 0.3); }
 .bg-sell { background-color: rgba(246, 70, 93, 0.1); color: #f6465d; border: 1px solid rgba(246, 70, 93, 0.3); }
 
-/* --- ESTATS DESACTIVATS (BASE) --- */
+/* --- ESTADOS DESACTIVADOS (BASE) --- */
 .card-disabled {
     pointer-events: none;
     opacity: 0.6;

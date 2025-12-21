@@ -1,10 +1,10 @@
-/* Arxiu: gridbot_binance/web/static/css/themes/sidebar-dark.css */
+/* Archivo: web/static/css/themes/sidebar-dark.css */
 
 /* ==========================================================================
-   PART 1: ESTILS VISUALS (TEMA DARK COMPLET)
+   TEMA: BARRA LATERAL (Sidebar Dark)
    ========================================================================== */
 
-/* --- FONS I ESTRUCTURA GENERAL --- */
+/* --- FONDO Y ESTRUCTURA GENERAL --- */
 body {
     background-color: #1e2023 !important; 
     color: #e0e0e0 !important;
@@ -25,7 +25,7 @@ body {
     font-weight: 700;
 }
 
-/* --- TARGETES (CARDS) --- */
+/* --- TARGETAS (CARDS) --- */
 .card {
     background-color: #2c3038 !important; 
     border: 1px solid #3a3f47 !important;
@@ -51,18 +51,16 @@ body {
     color: #ffffff !important;
 }
 
-/* --- TEXTOS I LLEGIBILITAT --- */
+/* --- TEXTOS Y LEGIBILITAT --- */
 .text-muted, small, .small, .stat-label, .stat-lbl, label, .card-subtitle, .form-text { color: #aeb4be !important; }
 h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat-val, .card-title { color: #ffffff !important; }
 .text-dark { color: #d1d1d1 !important; }
 .text-body { color: #e0e0e0 !important; }
 a { color: #7367f0; } 
 
-/* Colors semàntics */
-.text-primary { color: #7367f0 !important; } 
-.text-success { color: #2ecc71 !important; } 
-.text-danger { color: #e74c3c !important; }  
-.text-warning { color: #ff9f43 !important; }
+/* --- COLORES SEMÁNTICOS (BÀSICS) --- */
+.text-primary, .table .text-primary { color: #7367f0 !important; } 
+.text-warning, .table .text-warning { color: #ff9f43 !important; }
 
 /* --- PESTANYES (TABS) --- */
 .nav-tabs {
@@ -79,7 +77,7 @@ a { color: #7367f0; }
 
 .nav-tabs .nav-link:hover { color: #fff !important; }
 
-/* --- TAULES (FORÇAT FOSC) --- */
+/* --- TABLAS (FORZADO OSCURO) --- */
 .table {
     --bs-table-bg: #2c3038 !important;
     --bs-table-color: #e0e0e0 !important;
@@ -148,7 +146,26 @@ a { color: #7367f0; }
     color: #fff !important;
 }
 
-/* --- LLISTES I REQUADRES --- */
+/* NOU: Botons Pausar (Warning) i Reanudar (Info) en fosc */
+.btn-outline-warning {
+    color: #ff9f43 !important;
+    border-color: #ff9f43 !important;
+}
+.btn-outline-warning:hover {
+    background-color: #ff9f43 !important;
+    color: #1e2023 !important; /* Text fosc sobre groc */
+}
+
+.btn-outline-info {
+    color: #00cfe8 !important;
+    border-color: #00cfe8 !important;
+}
+.btn-outline-info:hover {
+    background-color: #00cfe8 !important;
+    color: #1e2023 !important; /* Text fosc sobre cian */
+}
+
+/* --- LISTAS Y RECUADROS --- */
 .list-group-item {
     background-color: #23272e !important; 
     border: 1px solid #3a3f47 !important;
@@ -161,7 +178,7 @@ a { color: #7367f0; }
     border-color: #3a3f47 !important; 
 }
 
-/* --- FORMULARIS (INPUTS FOSCOS) --- */
+/* --- FORMULARIOS (INPUTS OSCUROS) --- */
 .form-control, .form-select, .input-group-text {
     background-color: #1e2023 !important;
     border: 1px solid #3a3f47 !important;
@@ -183,7 +200,7 @@ a { color: #7367f0; }
 
 ::placeholder { color: #6c757d !important; opacity: 1; }
 
-/* --- MODALS I ALERTS --- */
+/* --- MODELOS Y ALERTAS --- */
 .modal-content, div:where(.swal2-container) div:where(.swal2-popup) {
     background-color: #2c3038 !important;
     color: #e0e0e0 !important;
@@ -196,7 +213,7 @@ a { color: #7367f0; }
 .dropdown-item { color: #e0e0e0 !important; } 
 .dropdown-item:hover { background-color: #7367f0 !important; color: #fff !important; }
 
-/* --- TÍTOLS DE SECCIÓ (MODIFICAT: GRIS) --- */
+/* --- TÍTULOS DE SECCIÓN (MODIFICADOS: GRIS) --- */
 .section-title {
     color: #b9b9c3 !important; /* Color sol·licitat */
     border-bottom: 2px dashed #3a3f47; /* Vora subtil */
@@ -207,20 +224,19 @@ a { color: #7367f0; }
     font-weight: 700;
 }
 
-/* Icona dins del títol */
+/* Icono dentro del título */
 .section-title i {
     color: #b9b9c3 !important; 
 }
 
 
 /* ==========================================================================
-   PART 2: LAYOUT BARRA LATERAL (SIDEBAR)
+   PARTE 2: LAYOUT BARRA LATERAL (SIDEBAR)
    ========================================================================== */
 
 /* --- VERSIÓ ESCRIPTORI (PC >= 992px) --- */
 @media (min-width: 992px) {
-    
-    /* 1. Barra Superior Fixa */
+    /* Navbar Lateral Fija */
     .navbar {
         position: fixed;
         top: 0; left: 0; right: 0;
@@ -228,7 +244,7 @@ a { color: #7367f0; }
         border-bottom: 1px solid #3a3f47;
     }
 
-    /* 2. Barra Lateral Fixa */
+    /* 2. Barra Lateral Fija */
     #mainTabs {
         position: fixed;
         top: 60px; 
@@ -245,7 +261,7 @@ a { color: #7367f0; }
         z-index: 1040;
     }
 
-    /* 3. Estil Botons Sidebar */
+    /* 3. Estilo Botones Sidebar */
     #mainTabs .nav-item {
         width: 100%;
         margin-bottom: 5px;
@@ -265,9 +281,9 @@ a { color: #7367f0; }
         color: #aeb4be !important;
     }
 
-    /* --- TRUC DE MÀGIA: ICONA A L'ESQUERRA, TEXT A LA DRETA --- */
+    /* --- TRUCO DE MAGIA: ICONO A LA IZQUIERDA, TEXTO A LA DERECHA --- */
     #mainTabs .nav-link i {
-        margin-right: auto !important; /* Empeny cap a l'esquerra */
+        margin-right: auto !important; /* Empuja a la izquierda */
     }
 
     .coin-icon {
@@ -275,7 +291,7 @@ a { color: #7367f0; }
         height: 24px;
         border-radius: 50%;
         object-fit: cover;
-        margin-right: auto !important; /* Empeny cap a l'esquerra */
+        margin-right: auto !important; /* Empuja a la izquierda */
     }
     
     .coin-fallback {
@@ -296,7 +312,7 @@ a { color: #7367f0; }
         font-weight: bold;
     }
 
-    /* 4. Desplaçament del cos */
+    /* Desplazamiento del cuerpo para dejar sitio al menú */
     body {
         padding-top: 70px;
         padding-left: 240px;
@@ -309,7 +325,7 @@ a { color: #7367f0; }
     }
 }
 
-/* --- VERSIÓ MÒBIL (< 992px) --- */
+/* --- VERSIÓN MÓVIL (< 992px) --- */
 @media (max-width: 991.98px) {
     body { padding-top: 0; padding-left: 0; }
     .navbar { position: sticky; top: 0; }
@@ -348,4 +364,30 @@ a { color: #7367f0; }
         color: white !important;
         border-right: none !important;
     }
+}
+
+/* ==========================================================================
+   FIX DEFINITIVO DE COLORS (OVERRIDE NUCLEAR)
+   ========================================================================== */
+/* Utilitzem una especificitat molt alta per assegurar que aquests colors s'apliquen
+   sobre qualsevol altra regla de "negreta blanca" del tema fosc */
+
+html body .table .text-success,
+html body .table .text-buy,
+html body .table .fw-bold.text-success,
+html body .table .fw-bold.text-buy,
+html body .table b.text-success,
+html body .table b.text-buy,
+html body .stat-val.text-success {
+    color: #2ecc71 !important; /* Verd brillant */
+}
+
+html body .table .text-danger,
+html body .table .text-sell,
+html body .table .fw-bold.text-danger,
+html body .table .fw-bold.text-sell,
+html body .table b.text-danger,
+html body .table b.text-sell,
+html body .stat-val.text-danger {
+    color: #e74c3c !important; /* Vermell brillant */
 }

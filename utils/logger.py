@@ -1,4 +1,4 @@
-# Arxiu: gridbot_binance/utils/logger.py
+# Archivo: gridbot_binance/utils/logger.py
 import logging
 import json5
 import os
@@ -6,13 +6,13 @@ import sys
 from datetime import datetime
 from colorama import init, Fore, Back, Style
 
-# Inicialitzar colors (autoreset neteja el color després de cada print)
+# Inicializar colores (autoreset limpia el color tras cada print)
 init(autoreset=True)
 
 class BotLogger:
     def __init__(self, level='INFO'):
         self.level = level.upper()
-        # Desactivem logs de llibreries sorolloses
+        # Desactivamos logs de librerías ruidosas
         logging.getLogger("urllib3").setLevel(logging.WARNING)
         logging.getLogger("ccxt").setLevel(logging.WARNING)
 
@@ -20,36 +20,36 @@ class BotLogger:
         return datetime.now().strftime('%H:%M:%S')
 
     def info(self, message):
-        # Missatge general (Blanc/Gris)
+        # Mensaje general (Blanco/Gris)
         print(f"{Fore.LIGHTBLACK_EX}[{self._timestamp()}] {Fore.WHITE}ℹ️  {message}")
 
     def warning(self, message):
-        # Alerta (Groc)
+        # Alerta (Amarillo)
         print(f"{Fore.LIGHTBLACK_EX}[{self._timestamp()}] {Fore.YELLOW}⚠️  {message}")
 
     def error(self, message):
-        # Error (Vermell brillant)
+        # Error (Rojo brillante)
         print(f"{Fore.LIGHTBLACK_EX}[{self._timestamp()}] {Fore.RED}{Style.BRIGHT}❌ ERROR: {message}")
 
     def success(self, message):
-        # Èxit (Verd)
+        # Éxito (Verde)
         print(f"{Fore.LIGHTBLACK_EX}[{self._timestamp()}] {Fore.GREEN}✅ {message}")
 
     def trade(self, symbol, side, price, amount):
-        # Operació (Format especial molt visible)
+        # Operación (Formato especial muy visible)
         ts = self._timestamp()
         if side.lower() == 'buy':
-            # Fons Verd lletra Blanca
+            # Fondo Verde letra Blanca
             print(f"\n{Back.GREEN}{Fore.WHITE} ⚡ COMPRA {symbol} {Style.RESET_ALL} {Fore.GREEN}@{price} | Cant: {amount} | Hora: {ts}")
         else:
-            # Fons Vermell lletra Blanca
+            # Fondo Rojo letra Blanca
             print(f"\n{Back.RED}{Fore.WHITE} 💰 VENTA  {symbol} {Style.RESET_ALL} {Fore.RED}@{price} | Cant: {amount} | Hora: {ts}")
-        print() # Espai extra
+        print() # Espacio extra
 
     def status(self, message):
-        # BARRA D'ESTAT (Sobreescriu la línia actual)
-        # \r torna al principi de la línia, end='' evita el salt de línia
-        sys.stdout.write(f"\r{Fore.CYAN}{Style.BRIGHT}🤖 ESTAT: {Fore.RESET}{message} " + " " * 10)
+        # BARRA DE ESTADO (Sobreescribe la línea actual)
+        # \r vuelve al principio de la línea, end='' evita el salto de línea
+        sys.stdout.write(f"\r{Fore.CYAN}{Style.BRIGHT}🤖 ESTADO: {Fore.RESET}{message} " + " " * 10)
         sys.stdout.flush()
 
 config_path = 'config/config.json5'

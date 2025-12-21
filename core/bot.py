@@ -1,4 +1,4 @@
-# Arxiu: gridbot_binance/core/bot.py
+# Archivo: gridbot_binance/core/bot.py
 from core.exchange import BinanceConnector
 from core.database import BotDatabase
 from utils.logger import log
@@ -7,7 +7,6 @@ import time
 import math
 import threading
 import copy
-import traceback
 from datetime import datetime
 from colorama import Fore, Style
 
@@ -25,49 +24,58 @@ class GridBot:
         self.global_start_time = 0
         self.bot_thread = None
         
-        # Control d'alertes
+        # Control de alertas
         self.processed_trade_ids = set()
         self.session_trades_count = {} 
         
-        # Control de manteniment
+        # Control de mantenimiento
         self.last_prune_time = 0
         
-        # Control Informe Diari
+        # Control Informe Diario
         self.last_daily_report_date = None
 
     def _refresh_pairs_map(self):
         self.pairs_map = {p['symbol']: p for p in self.config['pairs'] if p['enabled']}
         self.active_pairs = list(self.pairs_map.keys())
 
-    # --- CÀLCUL RSI MANUAL ---
+    # --- FUNCIÓN NUEVA: CÁLCULO RSI MANUAL (sin librerías) ---
     def _calculate_rsi(self, candles, period=14):
+        # candles es una lista [[time, open, high, low, close], ...]
         if not candles or len(candles) < period + 1:
-            return 50.0 
+            return 50.0 # Valor neutro si no hay datos
         
         closes = [float(c[4]) for c in candles]
+        # Necesitamos los cambios de precio
         deltas = [closes[i] - closes[i-1] for i in range(1, len(closes))]
         
         gains = [d if d > 0 else 0 for d in deltas]
         losses = [-d if d < 0 else 0 for d in deltas]
         
+        # Media inicial simple
         avg_gain = sum(gains[:period]) / period
         avg_loss = sum(losses[:period]) / period
         
+        # Suavizado (Wilder's Smoothing)
         for i in range(period, len(deltas)):
             avg_gain = (avg_gain * (period - 1) + gains[i]) / period
             avg_loss = (avg_loss * (period - 1) + losses[i]) / period
             
-        if avg_loss == 0: return 100.0
+        if avg_loss == 0:
+            return 100.0
+        
         rs = avg_gain / avg_loss
-        return round(100 - (100 / (1 + rs)), 2)
+        rsi = 100 - (100 / (1 + rs))
+        return round(rsi, 2)
+    # ---------------------------------------------------------
 
     def _data_collector_loop(self):
+        last_balance_log = 0
         while self.is_running:
             if self.is_paused or not self.connector.exchange:
                 time.sleep(1)
                 continue
             
-            # --- 1. MANTENIMENT DE BBDD (Cada 24h) ---
+            # --- 1. MANTENIMIENTO DE BBDD (Cada 24h) ---
             if time.time() - self.last_prune_time > 86400:
                 try:
                     log.info("🧹 Ejecutando mantenimiento de Base de Datos...")
@@ -78,7 +86,7 @@ class GridBot:
                 except Exception as e:
                     log.error(f"Error en mantenimiento DB: {e}")
             
-            # --- 2. INFORME DIARI TELEGRAM (08:00 AM) ---
+            # --- 2. INFORME DIARIO TELEGRAM (08:00 AM) ---
             now = datetime.now()
             current_date_str = now.strftime("%Y-%m-%d")
             
@@ -109,7 +117,8 @@ class GridBot:
             for symbol in current_pairs:
                 try:
                     price = self.connector.fetch_current_price(symbol)
-                    candles = self.connector.fetch_candles(symbol, limit=1000) 
+                    # --- CAMBIO: 500 VELAS (Per evitar ban IP) ---
+                    candles = self.connector.fetch_candles(symbol, limit=500) 
                     self.db.update_market_snapshot(symbol, price, candles)
 
                     open_orders = self.connector.fetch_open_orders(symbol) or []
@@ -144,9 +153,11 @@ class GridBot:
             tid = t['id']
             side = t['side'].upper()
             
+            # --- ASEGURAR ID SIEMPRE ---
             buy_id_assigned = None
             if side == 'BUY':
                  buy_id_assigned = self.db.assign_id_to_trade_if_missing(tid)
+            # ---------------------------
 
             if tid in self.processed_trade_ids: continue
             
@@ -185,9 +196,12 @@ class GridBot:
             
             else:
                 linked_id = self.db.find_linked_buy_id(symbol, price, spread_pct)
+                
+                # --- CORRECCIÓ: GUARDAR LINK A LA DB ---
                 if linked_id:
                     self.db.set_trade_buy_id(tid, linked_id)
-                
+                # ---------------------------------------
+
                 id_text = f"#{linked_id}" if linked_id else "?"
 
                 buy_price_ref = price / (1 + (spread_pct / 100))
@@ -257,7 +271,7 @@ class GridBot:
         balance_base = self.connector.get_total_balance(base_asset)
         amount_buy_usdc = params['amount_per_grid']
         
-        # --- LÒGICA D'ARRENCADA ---
+        # --- LÓGICA DE ARRANQUE (START MODE) ---
         if not self.db.get_symbol_setup_done(symbol):
             mode = params.get('start_mode', 'wait')
             
@@ -266,24 +280,28 @@ class GridBot:
                 total_invest = amount_buy_usdc * multiplier
                 log.warning(f"🚀 ARRANQUE {mode.upper()}: Comprando {total_invest} USDC de {symbol}...")
                 
+                # Ejecutar compra a mercado
                 buy_order = self.connector.place_market_buy(symbol, total_invest)
                 
                 if buy_order:
                     log.success(f"✅ Compra inicial ({mode}) ejecutada.")
                     send_msg(f"🚀 <b>ARRANQUE RÁPIDO ({mode.upper()})</b>\nCompra a mercado ejecutada en {symbol}.")
+                    # Esperamos un poco para que el Exchange procese
                     time.sleep(2)
                 else:
                     log.error(f"❌ Falló la compra inicial de {symbol}.")
             
+            # Marcamos como hecho para que no lo repita nunca más
             self.db.set_symbol_setup_done(symbol, True)
-            return
-        # ------------------------
+            return # Volvemos para regenerar la rejilla en el siguiente ciclo
+        # ---------------------------------------
         
-        # --- COMPRA DE SEGURETAT ---
+        # --- COMPRA INICIAL DE SEGURIDAD (Si no hay saldo) ---
         value_held = balance_base * current_price
         
         if value_held < 5.0:
             log.warning(f"⚠️ {symbol}: Sin inventario ({value_held:.2f} $). Ejecutando COMPRA INICIAL...")
+            
             usdc_balance = self.connector.get_asset_balance('USDC')
             if usdc_balance > amount_buy_usdc:
                 buy_order = self.connector.place_market_buy(symbol, amount_buy_usdc)
@@ -293,7 +311,7 @@ class GridBot:
                     return 
             else:
                 log.error(f"Falta USDC para compra inicial de {symbol}.")
-        # ---------------------------
+        # ----------------------
 
         open_orders = self.connector.fetch_open_orders(symbol)
         
@@ -302,31 +320,44 @@ class GridBot:
 
         my_levels = self.levels[symbol]
         
-        # --- TRAILING UP ---
+        # --- LÓGICA TRAILING UP ---
         if params.get('trailing_enabled', False) and my_levels:
              my_levels.sort()
              max_level = my_levels[-1]
              spread_val = params['grid_spread'] / 100
+             
+             # Activamos el movimiento si el precio supera el máximo en un 20% del spread aprox (buffer)
              trigger_price = max_level * (1 + (spread_val * 0.2))
              
              if current_price > trigger_price:
                  log.warning(f"🚀 TRAILING UP: {symbol} ha roto techo ({max_level}). Moviendo rejilla...")
+                 
+                 # 1. Eliminamos el nivel inferior
                  lowest_level = my_levels.pop(0)
+                 
+                 # 2. Cancelamos la orden que estaba en este nivel
+                 # NOTA: Si esto falla, el "Limpiador de Huérfanas" (abajo) lo rematará en el siguiente ciclo.
                  for o in open_orders:
                      if math.isclose(o['price'], lowest_level, rel_tol=1e-5):
                          log.info(f"🗑️ Cancelando orden inferior {o['id']} ({lowest_level}) para liberar grid.")
                          self.connector.cancel_order(o['id'], symbol)
                          break
+                 
+                 # 3. Creamos un nuevo nivel superior
                  new_top = max_level * (1 + spread_val)
                  try:
                     p_str = self.connector.exchange.price_to_precision(symbol, new_top)
                     new_top = float(p_str)
                  except: pass
+                 
                  my_levels.append(new_top)
                  self.levels[symbol] = sorted(my_levels)
-                 send_msg(f"🧗 <b>TRAILING UP {symbol}</b>\nGrid desplazado. Nuevo techo: {new_top}")
+                 
+                 send_msg(f"🧗 <b>TRAILING UP {symbol}</b>\nEl precio ha subido. Grid desplazado hacia arriba.\nNuevo techo: {new_top}")
+                 
+                 # Retornamos para dejar que el siguiente ciclo coloque las órdenes nuevas limpias
                  return 
-        # -------------------
+        # --------------------------
 
         base_asset, quote_asset = symbol.split('/')
         spread_val = params['grid_spread'] / 100
@@ -369,14 +400,34 @@ class GridBot:
                       except: pass
 
             log.warning(f"[{symbol}] Creando orden {target_side} @ {level_price}")
+            
             self.connector.place_order(symbol, target_side, amount, level_price)
+
+        # --- SEGURIDAD: LIMPIEZA DE HUÉRFANAS ---
+        # Si hay una orden abierta que NO coincide con ningún nivel de la rejilla actual, la cancelamos.
+        # Esto soluciona el problema de órdenes que quedan "colgadas" tras un Trailing Up.
+        for o in open_orders:
+            match_found = False
+            for lvl in my_levels:
+                if math.isclose(o['price'], lvl, rel_tol=1e-5):
+                    match_found = True
+                    break
+            
+            if not match_found:
+                # Doble chequeo: asegurarnos que no sea una orden manual o algo raro
+                # Simplemente si no está en my_levels, para el bot sobra.
+                log.info(f"🧹 Limpiando orden huérfana {o['id']} ({o['price']}) - Fuera de rango.")
+                self.connector.cancel_order(o['id'], symbol)
+        # ----------------------------------------
 
     def _handle_smart_reload(self):
         print() 
         log.warning("🔄 CONFIGURACIÓN ACTUALIZADA: Analizando cambios...")
+        
         old_testnet = self.config.get('system', {}).get('use_testnet', True)
         new_config = self.connector.config 
         new_testnet = new_config.get('system', {}).get('use_testnet', True)
+        
         self.config = new_config
         self._refresh_pairs_map()
         
@@ -384,29 +435,36 @@ class GridBot:
             network_name = "TESTNET" if new_testnet else "REAL"
             log.warning(f"🚨 CAMBIO DE RED DETECTADO A: {network_name}. Reiniciando sistema...")
             send_msg(f"🔄 <b>CAMBIO DE RED</b>\nEl bot ha pasado a modo: <b>{network_name}</b>")
+            
             self.levels = {}
             self.reserved_inventory = {}
             self.db.reset_all_statistics()
             self.processed_trade_ids.clear()
             self.session_trades_count = {} 
+            
+            log.info("Recalculando patrimonio en la nueva red...")
             initial_equity = self.calculate_total_equity()
             self.db.set_session_start_balance(initial_equity)
             self.db.set_global_start_balance_if_not_exists(initial_equity)
             self.capture_initial_snapshots()
             self.global_start_time = time.time()
+            
             log.success(f"✅ Sistema reiniciado en modo {network_name}.")
             return
 
         new_symbols = set(self.pairs_map.keys())
         active_running_symbols = set(self.levels.keys())
+        
         removed = active_running_symbols - new_symbols
         for symbol in removed:
             log.info(f"⛔ Deteniendo {symbol}. Cancelando órdenes...")
             self.connector.cancel_all_orders(symbol)
             if symbol in self.levels: del self.levels[symbol]
             if symbol in self.reserved_inventory: del self.reserved_inventory[symbol.split('/')[0]]
+            
         added = new_symbols - active_running_symbols
         for symbol in added: log.success(f"✨ Activando {symbol}.")
+        
         log.info("✅ Recarga completada.")
         send_msg("⚙️ <b>CONFIGURACIÓN ACTUALIZADA</b>\nNuevos parámetros aplicados.")
 
@@ -431,7 +489,8 @@ class GridBot:
 
     def calculate_total_equity(self):
         total_usdc = 0.0
-        try: total_usdc += self.connector.get_total_balance('USDC')
+        try:
+            total_usdc += self.connector.get_total_balance('USDC')
         except: pass
         for symbol in self.active_pairs:
             base = symbol.split('/')[0]
@@ -454,7 +513,7 @@ class GridBot:
             except Exception as e:
                 log.error(f"Error snapshot {symbol}: {e}")
 
-    # --- ACCIONS DE PÀNIC / CONTROL ---
+    # --- ACCIONES DE PÁNICO / CONTROL ---
     
     def panic_stop(self):
         print()
@@ -489,12 +548,14 @@ class GridBot:
         sold_count = 0
         self.panic_cancel_all()
         time.sleep(2) 
+
         for symbol in self.active_pairs:
             try:
                 base_asset = symbol.split('/')[0]
                 amount = self.connector.get_asset_balance(base_asset)
                 price = self.connector.fetch_current_price(symbol)
                 value_usdc = amount * price
+                
                 if value_usdc > 2.0: 
                     log.warning(f"Vendiendo {amount} {base_asset} a mercado...")
                     self.connector.place_market_sell(symbol, amount)
@@ -502,44 +563,37 @@ class GridBot:
                     time.sleep(0.5) 
             except Exception as e:
                 log.error(f"Error Panic Sell {symbol}: {e}")
+        
         send_msg(f"🔥 <b>PÁNICO FINALIZADO</b>\nSe han liquidado {sold_count} posiciones.")
         return sold_count
 
-    # --- GESTIÓ DEL CICLE DE VIDA ---
+    # --- GESTIÓN DEL CICLO DE VIDA ---
 
     def start_logic(self):
-        log.info(f"{Fore.CYAN}--- INICIANDO GRIDBOT PROFESSIONAL (PERSISTENT) ---{Style.RESET_ALL}")
+        log.info(f"{Fore.CYAN}--- INICIANDO GRIDBOT PROFESSIONAL ---{Style.RESET_ALL}")
         
         self.connector.check_and_reload_config()
         self.config = self.connector.config 
+        
         self.connector.validate_connection()
         
-        saved_start_time = self.db.get_session_start_time()
-        if saved_start_time > 0:
-            log.success("🔄 SESIÓN DETECTADA: Recuperando estado anterior...")
-            self.global_start_time = saved_start_time
-            saved_balance = self.db.get_session_start_balance()
-            if saved_balance > 0:
-                log.info(f"💰 Patrimonio Inicial Sessión (Recuperado): {saved_balance:.2f} USDC")
-            else:
-                current_equity = self.calculate_total_equity()
-                self.db.set_session_start_balance(current_equity)
-            self.levels = self.db.get_all_stored_grids()
-            log.info(f"Recuperados niveles de grid para {len(self.levels)} pares.")
-        else:
-            log.info("✨ NUEVA SESIÓN: Iniciando contadores...")
-            self.global_start_time = time.time()
-            self.db.set_session_start_time(self.global_start_time)
-            initial_equity = self.calculate_total_equity()
-            log.info(f"💰 Patrimonio Inicial Total: {Fore.GREEN}{initial_equity:.2f} USDC{Fore.RESET}")
-            self.db.set_session_start_balance(initial_equity)
-            self.db.set_global_start_balance_if_not_exists(initial_equity)
-            self.capture_initial_snapshots()
-
-        self.processed_trade_ids.clear()
-        send_msg(f"🚀 <b>MOTOR INICIADO</b>\nModo: {'RECUPERACIÓN' if saved_start_time > 0 else 'NUEVA SESIÓN'}")
+        log.info("Calculando patrimonio inicial...")
+        initial_equity = self.calculate_total_equity()
+        log.info(f"💰 Patrimonio Inicial Total: {Fore.GREEN}{initial_equity:.2f} USDC{Fore.RESET}")
         
-        log.info("Sincronizando con el Exchange...")
+        self.db.set_session_start_balance(initial_equity)
+        self.db.set_global_start_balance_if_not_exists(initial_equity)
+        self.capture_initial_snapshots()
+        self.global_start_time = time.time()
+        self.processed_trade_ids.clear()
+
+        send_msg(f"🚀 <b>MOTOR INICIADO</b>\nPatrimonio inicial: {initial_equity:.2f} USDC")
+
+        log.warning("Limpiando órdenes antiguas iniciales...")
+        for symbol in self.active_pairs:
+            self.connector.cancel_all_orders(symbol)
+        
+        log.info("Arrancando motores...")
         time.sleep(2)
         
         self.is_running = True
@@ -552,27 +606,22 @@ class GridBot:
             self._monitoring_loop()
         except KeyboardInterrupt:
             self._shutdown()
-        # --- CANVI CRÍTIC: Capturem errors fatals per no deixar el bot zombie ---
-        except Exception as e:
-            log.error(f"❌ CRASH FATAL EN MOTOR: {e}")
-            log.error(traceback.format_exc())
-            send_msg(f"💥 <b>BOT DETENIDO POR ERROR</b>\n{e}")
-            self._shutdown()
 
     def launch(self):
         if self.is_running:
-            log.warning("El bot ja està corrent!")
+            log.warning("El bot ya está corriendo!")
             return False
+        
         self.bot_thread = threading.Thread(target=self.start_logic, daemon=True)
         self.bot_thread.start()
         return True
 
     def stop_logic(self):
         if not self.is_running: return
-        log.warning("Aturando lógica del bot...")
+        log.warning("Deteniendo lógica del bot...")
         self.is_running = False
         send_msg("🛑 <b>MOTOR DETENIDO</b>\nEl bot se ha apagado.")
-        log.success("Bot aturado.")
+        log.success("Bot detenido.")
 
     def _monitoring_loop(self):
         delay = self.config['system']['cycle_delay']
@@ -589,6 +638,7 @@ class GridBot:
             if not self.connector.exchange:
                 if self.connector.check_and_reload_config():
                     self._handle_smart_reload()
+
                 log.status(f"{Fore.RED}SIN CONEXIÓN{Fore.RESET} - Revisa API Keys / Red... {spin_chars[idx]}")
                 idx = (idx + 1) % 4
                 time.sleep(1)
@@ -600,9 +650,10 @@ class GridBot:
             for symbol in self.active_pairs:
                 self._ensure_grid_consistency(symbol)
             
-            display_status = f"{Fore.GREEN}EN MARXA{Fore.RESET} | Monitorizando {len(self.active_pairs)} pares | {spin_chars[idx]}"
+            display_status = f"{Fore.GREEN}EN MARCHA{Fore.RESET} | Monitorizando {len(self.active_pairs)} pares | {spin_chars[idx]}"
             log.status(display_status)
             idx = (idx + 1) % 4
+            
             time.sleep(delay)
 
     def _shutdown(self):

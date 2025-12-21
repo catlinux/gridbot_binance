@@ -16,25 +16,25 @@
   "pairs": [
     {
       "symbol": "BTC/USDC",
-      "enabled": false,
+      "enabled": true,
       "strategy": {
         "grids_quantity": 10,
-        "amount_per_grid": 150,
-        "grid_spread": 1.2,
-        "start_mode": "wait",
-        "strategy_profile": "conservative",
-        "trailing_enabled": false
+        "amount_per_grid": 14,
+        "grid_spread": 0.6,
+        "start_mode": "buy_2",
+        "strategy_profile": "manual",
+        "trailing_enabled": true
       }
     },
     {
       "symbol": "ETH/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 14,
-        "amount_per_grid": 10,
-        "grid_spread": 0.6,
-        "start_mode": "buy_1",
-        "strategy_profile": "moderate",
+        "grids_quantity": 10,
+        "amount_per_grid": 14,
+        "grid_spread": 0.8,
+        "start_mode": "buy_2",
+        "strategy_profile": "manual",
         "trailing_enabled": true
       }
     },
@@ -52,7 +52,7 @@
     },
     {
       "symbol": "SOL/USDC",
-      "enabled": true,
+      "enabled": false,
       "strategy": {
         "grids_quantity": 14,
         "amount_per_grid": 10,
@@ -64,7 +64,7 @@
     },
     {
       "symbol": "ADA/USDC",
-      "enabled": true,
+      "enabled": false,
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 10,
@@ -78,23 +78,23 @@
       "symbol": "XRP/USDC",
       "enabled": true,
       "strategy": {
-        "grids_quantity": 14,
-        "amount_per_grid": 10,
-        "grid_spread": 0.6,
-        "start_mode": "buy_1",
-        "strategy_profile": "moderate",
+        "grids_quantity": 10,
+        "amount_per_grid": 14,
+        "grid_spread": 1,
+        "start_mode": "buy_2",
+        "strategy_profile": "manual",
         "trailing_enabled": true
       }
     },
     {
       "symbol": "DOGE/USDC",
-      "enabled": true,
+      "enabled": false,
       "strategy": {
         "grids_quantity": 14,
         "amount_per_grid": 10,
         "grid_spread": 0.6,
-        "start_mode": "buy_1",
-        "strategy_profile": "moderate",
+        "start_mode": "wait",
+        "strategy_profile": "manual",
         "trailing_enabled": true
       }
     },

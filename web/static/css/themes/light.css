@@ -1,13 +1,13 @@
-/* Arxiu: gridbot_binance/web/static/css/themes/light.css */
+/* Archivo: web/static/css/themes/light.css */
 /* =========================================
    TEMA: ORIGINAL (LIGHT / CLASSIC)
    ========================================= */
 
-/* --- 1. FONS I FONTS ORIGINALS --- */
+/* --- 1. FONDO Y FUENTES ORIGINALES --- */
 body {
-    background-color: #f0f2f5; /* Gris molt suau de fons */
+    background-color: #f0f2f5; /* Gris muy suave de fondo */
     color: #212529;
-    /* Font original de Bootstrap (la que es veu a les imatges) */
+    /* Fuente original de Bootstrap (la que se ve en las imágenes) */
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
@@ -17,25 +17,25 @@ body {
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
 
-/* --- 3. PESTANYES (TABS) - RECUPERANT L'ESTIL CLÀSSIC --- */
+/* --- 3. PESTAÑAS (TABS) - RECUPERANDO EL ESTILO CLÁSICO --- */
 .nav-tabs {
     border-bottom: 1px solid #dee2e6;
-    background-color: transparent; /* El fons de la barra és transparent */
+    background-color: transparent; /* El fondo de la barra es transparente */
     padding-left: 0;
 }
 
 .nav-tabs .nav-link {
     margin-bottom: -1px;
-    background-color: #e9ecef; /* Fons GRIS per les inactives */
+    background-color: #e9ecef; /* Fondo GRIS para las inactivas */
     border: 1px solid #dee2e6;
-    color: #495057; /* Text gris fosc */
+    color: #495057; /* Texto gris oscuro */
     margin-right: 4px;
-    border-radius: 4px 4px 0 0; /* Arrodonides a dalt */
+    border-radius: 4px 4px 0 0; /* Redondeadas arriba */
     font-weight: 600;
     padding: 10px 15px;
     font-size: 0.9rem;
     
-    /* Afegit per alinear icona i text */
+    /* Añadido para alinear icono y texto */
     display: flex;
     align-items: center;
     gap: 8px;
@@ -47,16 +47,16 @@ body {
     color: #212529;
 }
 
-/* Pestanya Activa: Blanca i connectada al contingut */
+/* Pestaña Activa: Blanca y conectada al contenido */
 .nav-tabs .nav-link.active {
     color: #000;
     background-color: #fff;
-    border-color: #dee2e6 #dee2e6 #fff; /* Vora inferior blanca per "obrir" */
+    border-color: #dee2e6 #dee2e6 #fff; /* Borde inferior blanco para "abrir" */
     font-weight: 700;
-    border-top: 3px solid transparent; /* Per mantenir alçada */
+    border-top: 3px solid transparent; /* Para mantener altura */
 }
 
-/* --- ICONES DE CRIPTOMONEDES (NOU) --- */
+/* --- ICONOS DE CRIPTOMONEDAS (NUEVO) --- */
 .coin-icon {
     width: 24px;
     height: 24px;
@@ -65,22 +65,22 @@ body {
     margin-right: 0;
 }
 
-/* El contingut és blanc */
+/* El contenido es blanco */
 .tab-content {
     background-color: transparent;
     padding-top: 15px;
 }
 
-/* --- 4. TARGETES (CARDS) --- */
+/* --- 4. TARJETAS (CARDS) --- */
 .card {
     background-color: #fff;
     border: 1px solid rgba(0,0,0,.125);
     border-radius: 0.5rem;
-    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15); /* Ombra suau original */
+    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15); /* Sombra suave original */
 }
 
 .card-header {
-    background-color: #f8f9fa; /* Capçalera gris molt clareta */
+    background-color: #f8f9fa; /* Cabecera gris muy clara */
     border-bottom: 1px solid rgba(0,0,0,.125);
     color: #212529;
     font-weight: 600;
@@ -90,22 +90,22 @@ body {
     color: #212529;
 }
 
-/* --- 5. DETALLS ESPECÍFICS (Bordes laterals i Títols) --- */
+/* --- 5. DETALLES ESPECÍFICOS (Bordes laterales y Títulos) --- */
 
-/* Vora blava gruixuda a l'esquerra (Benefici Sessió) */
+/* Borde azul grueso a la izquierda (Beneficio Sesión) */
 .border-l-session {
-    border-left: 0.25rem solid #4e73df !important; /* Blau tipus Dashboard */
+    border-left: 0.25rem solid #4e73df !important; /* Azul tipo Dashboard */
 }
 
-/* Vora grisa gruixuda a l'esquerra (Benefici Global) */
+/* Borde gris grueso a la izquierda (Beneficio Global) */
 .border-l-global {
-    border-left: 0.25rem solid #858796 !important; /* Gris fosc */
+    border-left: 0.25rem solid #1cc88a !important; /* Verde */
 }
 
-/* Títols de Secció (Amb línia discontínua) */
+/* Títulos de Sección (Con línea discontinua) */
 .section-title {
     color: #858796;
-    border-bottom: 1px dashed #d1d3e2; /* Línia discontínua */
+    border-bottom: 1px dashed #d1d3e2; /* Línea discontinua */
     padding-bottom: 10px;
     margin-bottom: 20px;
     margin-top: 10px;
@@ -116,12 +116,12 @@ body {
     display: block;
 }
 
-/* Icona del títol (el llamp) */
+/* Icono del título (el rayo) */
 .section-title i {
-    color: #4e73df; /* Color accent blau/lila */
+    color: #4e73df; /* Color acento azul/lila */
 }
 
-/* --- 6. TAULES --- */
+/* --- 6. TABLAS --- */
 .table {
     color: #212529;
     background-color: #fff;
@@ -129,7 +129,7 @@ body {
 .table thead th {
     background-color: #f8f9fa;
     border-bottom: 2px solid #e3e6f0;
-    color: #4e73df; /* Capçaleres en blau (comun en temes admin light) o gris fosc */
+    color: #4e73df; /* Cabeceras en azul (común en temas admin light) o gris oscuro */
     font-weight: 700;
     font-size: 0.8rem;
     text-transform: uppercase;
@@ -141,7 +141,7 @@ body {
     background-color: rgba(0,0,0,.05);
 }
 
-/* --- 7. INPUTS I FORMULARIS --- */
+/* --- 7. INPUTS Y FORMULARIOS --- */
 .form-control, .form-select, .input-group-text {
     background-color: #fff;
     border: 1px solid #d1d3e2;
@@ -155,9 +155,9 @@ body {
     color: #858796 !important;
 }
 
-/* --- 8. FIX: Targetes Desactivades en mode Clar --- */
+/* --- 8. FIX: Tarjetas Desactivadas en modo Claro --- */
 .card-disabled {
-    background-color: #eaecf4 !important; /* Gris més fosc per indicar desactivat */
+    background-color: #eaecf4 !important; /* Gris más oscuro para indicar desactivado */
     opacity: 0.7;
     border-color: #d1d3e2 !important;
 }

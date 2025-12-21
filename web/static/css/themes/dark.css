@@ -1,16 +1,16 @@
-/* Arxiu: gridbot_binance/web/static/css/themes/dark.css */
+/* Archivo: web/static/css/themes/dark.css */
 /* =========================================
-   TEMA: SLATE GREY & NAVY (Final Fix + Icones + Text)
+   TEMA: SLATE GREY & NAVY (Final Fix + Iconos + Texto)
    ========================================= */
 
-/* --- FONS I ESTRUCTURA --- */
+/* --- FONDO Y ESTRUCTURA --- */
 body {
     background-color: #1e2023 !important; 
     color: #e0e0e0 !important;
     font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
 }
 
-/* El contenidor de les pestanyes */
+/* El contenedor de las pestañas */
 .tab-content {
     background-color: #3b4047 !important; 
     padding: 20px;
@@ -25,14 +25,14 @@ body {
     box-shadow: none;
 }
 
-/* --- TARGETES (CARDS) --- */
+/* --- TARJETAS (CARDS) --- */
 .card {
     background-color: #2c3038 !important; 
     border: 1px solid #3a3f47 !important;
     border-radius: 6px;
     box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     margin-bottom: 1rem;
-    color: #e0e0e0 !important; /* Assegurem color base */
+    color: #e0e0e0 !important; /* Aseguramos color base */
 }
 
 .card-header {
@@ -51,7 +51,7 @@ body {
     color: #ffffff !important; 
 }
 
-/* --- PANELLS I ELEMENTS CLARS --- */
+/* --- PANELES Y ELEMENTOS CLAROS --- */
 .bg-light, .border.rounded.mx-0 {
     background-color: #2c3038 !important; 
     color: #b9b9c3 !important; 
@@ -60,19 +60,17 @@ body {
 
 .form-check-label, .form-text { color: #b9b9c3 !important; }
 
-/* --- FORÇAT DE TEXTOS (SOLUCIÓ DE LLEGIBILITAT) --- */
+/* --- FORZADO DE TEXTOS (SOLUCIÓN DE LEGIBILIDAD) --- */
 .text-muted, small, .small, .stat-label, .stat-lbl, label, .card-subtitle { color: #aeb4be !important; }
 h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat-val, .card-title { color: #ffffff !important; }
 .text-dark { color: #d1d1d1 !important; }
 .text-body { color: #e0e0e0 !important; }
 
-/* Colors semàntics */
-.text-primary { color: #7367f0 !important; } 
-.text-success { color: #2ecc71 !important; } 
-.text-danger { color: #e74c3c !important; }  
-.text-warning { color: #ff9f43 !important; }
+/* Colores semánticos (BÀSICS) */
+.text-primary, .table .text-primary { color: #7367f0 !important; } 
+.text-warning, .table .text-warning { color: #ff9f43 !important; }
 
-/* --- PESTANYES (TABS) --- */
+/* --- PESTAÑAS (TABS) --- */
 .nav-tabs {
     border-bottom: none !important;
     background-color: #1e2023 !important;
@@ -89,7 +87,7 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat
     padding: 10px 20px;
     border-radius: 6px 6px 0 0;
     
-    /* Flex per icones */
+    /* Flex para iconos */
     display: flex;
     align-items: center;
     gap: 8px;
@@ -103,7 +101,7 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat
     border: none !important;
 }
 
-/* --- ICONES DE CRIPTOMONEDES (FIX MIDA) --- */
+/* --- ICONOS DE CRIPTOMONEDAS (FIX TAMAÑO) --- */
 .coin-icon {
     width: 24px;
     height: 24px;
@@ -112,11 +110,11 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat
     margin-right: 0; 
 }
 
-/* --- TAULES (FOSQUES IMPERATIVES) --- */
+/* --- TABLAS (OSCURAS IMPERATIVAS) --- */
 .table, .table > tbody > tr > td, .table > thead > tr > th {
     color: #e0e0e0 !important;
     border-color: #3a3f47 !important;
-    background-color: #2c3038 !important; /* Fons fosc forçat */
+    background-color: #2c3038 !important; /* Fondo oscuro forzado */
 }
 
 .table thead th {
@@ -139,7 +137,7 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat
 
 .table-responsive { background-color: transparent !important; }
 
-/* --- LLISTES I REQUADRES --- */
+/* --- LISTAS Y RECUADROS --- */
 .list-group-item {
     background-color: #23272e !important; 
     border: 1px solid #3a3f47 !important;
@@ -148,7 +146,7 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat
     border-radius: 6px !important; 
 }
 
-/* --- FORMULARIS (INPUTS FOSCOS) --- */
+/* --- FORMULARIOS (INPUTS OSCUROS) --- */
 .form-control, .form-select, .input-group-text {
     background-color: #1e2023 !important;
     border: 1px solid #3a3f47 !important;
@@ -168,7 +166,7 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat
     color: #aeb4be !important;
 }
 
-/* --- MODALS I ALERTS --- */
+/* --- MODALES Y ALERTS --- */
 .modal-content, div:where(.swal2-container) div:where(.swal2-popup) {
     background-color: #2c3038 !important;
     color: #e0e0e0 !important;
@@ -181,10 +179,10 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat
 .dropdown-item { color: #e0e0e0 !important; } 
 .dropdown-item:hover { background-color: #7367f0 !important; color: #fff !important; }
 
-/* --- TÍTOLS DE SECCIÓ (MODIFICAT: GRIS) --- */
+/* --- TÍTULOS DE SECCIÓN (MODIFICADO: GRIS) --- */
 .section-title {
-    color: #b9b9c3 !important; /* Color sol·licitat */
-    border-bottom: 2px dashed #3a3f47; /* Vora subtil en lloc de lila */
+    color: #b9b9c3 !important; /* Color solicitado */
+    border-bottom: 2px dashed #3a3f47; /* Borde sutil en lugar de lila */
     display: inline-block;
     padding-bottom: 5px;
     margin-bottom: 20px;
@@ -192,16 +190,35 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat
     font-weight: 700;
 }
 
-/* Icona dins del títol (opcional: també gris o mantenir accent) */
+/* Icono dentro del título (opcional: también gris o mantener acento) */
 .section-title i {
-    color: #b9b9c3 !important; /* Icona també grisa per coherència */
+    color: #b9b9c3 !important; /* Icono también gris por coherencia */
 }
 
-/* --- BOTONS --- */
+/* --- BOTONES --- */
 .btn-outline-dark { color: #aeb4be; border-color: #aeb4be; }
 .btn-outline-dark:hover { background-color: #aeb4be; color: #1e2023; }
 
-/* --- EFECTE TARGETA DESACTIVADA --- */
+/* NUEVO: Botones Pausar (Warning) y Reanudar (Info) en oscuro */
+.btn-outline-warning {
+    color: #ff9f43 !important;
+    border-color: #ff9f43 !important;
+}
+.btn-outline-warning:hover {
+    background-color: #ff9f43 !important;
+    color: #1e2023 !important; /* Texto oscuro sobre amarillo */
+}
+
+.btn-outline-info {
+    color: #00cfe8 !important;
+    border-color: #00cfe8 !important;
+}
+.btn-outline-info:hover {
+    background-color: #00cfe8 !important;
+    color: #1e2023 !important; /* Texto oscuro sobre cian */
+}
+
+/* --- EFECTO TARJETA DESACTIVADA --- */
 .card-disabled {
     opacity: 0.6; 
     filter: grayscale(100%);
@@ -224,4 +241,27 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6, strong, b, .fw-bold, .stat
 .card-disabled .form-check-input.pair-toggle {
     pointer-events: auto !important;
     filter: none !important;
+}
+
+/* ==========================================================================
+   FIX DEFINITIVO DE COLORS (OVERRIDE NUCLEAR)
+   ========================================================================== */
+html body .table .text-success,
+html body .table .text-buy,
+html body .table .fw-bold.text-success,
+html body .table .fw-bold.text-buy,
+html body .table b.text-success,
+html body .table b.text-buy,
+html body .stat-val.text-success {
+    color: #2ecc71 !important; /* Verd brillant */
+}
+
+html body .table .text-danger,
+html body .table .text-sell,
+html body .table .fw-bold.text-danger,
+html body .table .fw-bold.text-sell,
+html body .table b.text-danger,
+html body .table b.text-sell,
+html body .stat-val.text-danger {
+    color: #e74c3c !important; /* Vermell brillant */
 }

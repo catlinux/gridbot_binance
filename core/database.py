@@ -1,3 +1,4 @@
+# Archivo: gridbot_binance/core/database.py
 import sqlite3
 import json
 import time
@@ -12,12 +13,12 @@ class BotDatabase:
     def __init__(self):
         if not os.path.exists(DB_FOLDER):
             os.makedirs(DB_FOLDER)
-        # Ja no guardem self.conn aquí per evitar conflictes de fils
+        # Ya no guardamos self.conn aquí para evitar conflictos de hilos
         self._init_db()
 
     def _get_conn(self):
-        """Obre una connexió nova segura per al fil actual"""
-        return sqlite3.connect(DB_PATH, timeout=30) # Timeout alt per evitar bloquejos
+        """Abre una conexión nueva segura para el hilo actual"""
+        return sqlite3.connect(DB_PATH, timeout=30) # Timeout alto para evitar bloqueos
 
     def _init_db(self):
         with self._get_conn() as conn:
@@ -26,7 +27,7 @@ class BotDatabase:
             try:
                 cursor.execute("PRAGMA journal_mode=WAL;")
             except Exception as e:
-                log.warning(f"No s'ha pogut activar WAL: {e}")
+                log.warning(f"No se pudo activar WAL: {e}")
             
             cursor.execute('''CREATE TABLE IF NOT EXISTS market_data (symbol TEXT PRIMARY KEY, price REAL, candles_json TEXT, updated_at REAL)''')
             cursor.execute('''CREATE TABLE IF NOT EXISTS grid_status (symbol TEXT PRIMARY KEY, open_orders_json TEXT, grid_levels_json TEXT, updated_at REAL)''')
@@ -81,7 +82,8 @@ class BotDatabase:
             
             assigned_id = current_id
             next_id = current_id + 1
-            if next_id > 500: next_id = 1
+            # Canviem el límit de 500 a 1000 com has demanat
+            if next_id > 1000: next_id = 1
             
             cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('next_buy_id', str(next_id)))
             conn.commit()
@@ -315,7 +317,7 @@ class BotDatabase:
             qty_delta_per_coin = {} 
             trades_per_coin = {} 
 
-            # Recuperem sessions individuals
+            # Recuperamos sesiones individuales
             cursor.execute("SELECT key, value FROM bot_info WHERE key LIKE 'session_start_%'")
             session_rows = cursor.fetchall()
             coin_sessions = {}
@@ -409,11 +411,11 @@ class BotDatabase:
                 found_id = row[0]
                 return found_id
                 
-            new_id = self.get_next_buy_id() # Aquesta funció obre la seva pròpia connexió, correcte
+            new_id = self.get_next_buy_id() # Esta función abre su propia conexión, correcto
             
-            # Necessitem set_trade_buy_id en una nova transacció o en aquesta?
-            # Com que usem _get_conn a set_trade_buy_id, millor cridar-la a fora o usar la connexió actual.
-            # Per simplicitat i seguretat de fils, cridem a self.set_trade_buy_id que obre la seva.
+            # ¿Necesitamos set_trade_buy_id en una nueva transacción o en esta?
+            # Como usamos _get_conn en set_trade_buy_id, mejor llamarla fuera o usar la conexión actual.
+            # Por simplicidad y seguridad de hilos, llamamos a self.set_trade_buy_id que abre la suya.
             
         self.set_trade_buy_id(trade_id, new_id)
         return new_id
@@ -482,7 +484,7 @@ class BotDatabase:
             cursor.execute("DELETE FROM bot_info WHERE key LIKE 'session_start_%'")
             conn.commit()
 
-    # --- NOVES FUNCIONS DE GESTIÓ DE DADES ---
+    # --- NUEVAS FUNCIONES DE GESTIÓN DE DATOS ---
     
     def reset_all_statistics(self):
         with self._get_conn() as conn:
@@ -496,7 +498,7 @@ class BotDatabase:
             cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('first_run', now))
             cursor.execute("INSERT INTO bot_info (key, value) VALUES (?, ?)", ('next_buy_id', '1'))
             
-            # Neteja de sessió integrada
+            # Limpieza de sesión integrada
             cursor.execute("DELETE FROM bot_info WHERE key='session_start_time'")
             cursor.execute("DELETE FROM bot_info WHERE key='session_start_balance'")
             cursor.execute("DELETE FROM bot_info WHERE key LIKE 'session_start_%'")
@@ -543,3 +545,43 @@ class BotDatabase:
             row = cursor.fetchone()
             if row: return float(row[0])
             return 0.0
+
+    # --- NOVES FUNCIONS PER GESTIÓ DE CAPITAL (CAPITAL ADJUSTMENT) ---
+
+    def adjust_balance_history(self, delta_usdc):
+        """Ajusta el balanç inicial global i de sessió (per ingressos/retirades)"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            
+            # 1. Ajustar Global Start Balance
+            cursor.execute("SELECT value FROM bot_info WHERE key='global_start_balance'")
+            row = cursor.fetchone()
+            current_glob = float(row[0]) if row else 0.0
+            new_glob = current_glob + delta_usdc
+            cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('global_start_balance', str(new_glob)))
+            
+            # 2. Ajustar Session Start Balance
+            cursor.execute("SELECT value FROM bot_info WHERE key='session_start_balance'")
+            row = cursor.fetchone()
+            current_sess = float(row[0]) if row else 0.0
+            new_sess = current_sess + delta_usdc
+            cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('session_start_balance', str(new_sess)))
+            
+            conn.commit()
+
+    def adjust_coin_initial_balance(self, symbol, delta_usdc):
+        """Ajusta el valor inicial d'una moneda específica (si ingressem crypto directament)"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM bot_info WHERE key='coins_initial_equity'")
+            row = cursor.fetchone()
+            data = {}
+            if row:
+                try: data = json.loads(row[0])
+                except: pass
+            
+            current_val = float(data.get(symbol, 0.0))
+            data[symbol] = current_val + delta_usdc
+            
+            cursor.execute("INSERT OR REPLACE INTO bot_info (key, value) VALUES (?, ?)", ('coins_initial_equity', json.dumps(data)))
+            conn.commit()

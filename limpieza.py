@@ -1,9 +1,10 @@
-# Arxiu: gridbot_binance/limpieza.py
+# Archivo: gridbot_binance/limpieza.py
 from core.exchange import BinanceConnector
 from utils.logger import log
 import json5
 
 def main():
+    # Herramienta de emergencia para cancelar todas las órdenes. Útil si el bot se queda colgado o quieres limpiar todo rápidamente.
     log.warning("--- INICIANDO LIMPIEZA TOTAL DE ÓRDENES ---")
     
     connector = BinanceConnector()
@@ -12,21 +13,24 @@ def main():
         with open('config/config.json5', 'r') as f:
             config = json5.load(f)
     except Exception as e:
-        log.error(f"Error leyendo config: {e}")
+        log.error(f"Error leyendo configuración: {e}")
         return
 
+    # Filtramos solo los pares que están activados en la config
     active_pairs = [p['symbol'] for p in config['pairs'] if p['enabled']]
     
     if not active_pairs:
-        log.warning("No hay pares habilitados en la config para limpiar.")
+        log.warning("No hay pares habilitados en la configuración para limpiar.")
         return
 
+    # Cancelamos órdenes par por par
     for symbol in active_pairs:
         log.info(f"Cancelando todo para {symbol}...")
         connector.cancel_all_orders(symbol)
         
     log.success("Órdenes canceladas correctamente.")
     
+    # Mostramos resumen final de la cartera (Wallet)
     log.info("\n--- ESTADO ACTUAL DE LA CARTERA (WALLET) ---")
     
     assets_to_check = set()
@@ -41,6 +45,7 @@ def main():
 
     grand_total_usdc = 0.0
 
+    # Iteramos activos y calculamos valor aproximado
     for asset in sorted(list(assets_to_check)):
         total_balance = connector.get_total_balance(asset)
         

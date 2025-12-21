@@ -1,4 +1,4 @@
-// Arxiu: gridbot_binance/web/static/js/config.js
+// Archivo: gridbot_binance/web/static/js/config.js
 import { fmtUSDC } from './utils.js';
 
 let currentConfigObj = null;
@@ -31,8 +31,8 @@ export async function loadConfigForm() {
         currentConfigObj.pairs.forEach((pair, index) => {
             const strategy = pair.strategy || currentConfigObj.default_strategy;
             const isEnabled = pair.enabled;
-            // Canvi: Unifiquem a 'card-disabled' per compatibilitat amb CSS fosc
-            const cardClass = isEnabled ? '' : 'card-disabled';
+            // Cambio: Unificamos a 'card-disabled' por compatibilidad con CSS oscuro
+            const cardClass = isEnabled ? '' : 'card-disabled'; 
             const checked = isEnabled ? 'checked' : '';
             
             const startMode = strategy.start_mode || 'wait';
@@ -161,7 +161,7 @@ export function updateButtons(index, activeProfile) {
     const bA = document.getElementById(`btn-agg-${index}`);
     const bMan = document.getElementById(`btn-man-${index}`);
     
-    // Reset classes
+    // Reset clases
     if(bC) bC.className = `btn btn-sm flex-fill ${activeProfile==='conservative' ? 'btn-success' : 'btn-outline-dark'}`;
     if(bM) bM.className = `btn btn-sm flex-fill ${activeProfile==='moderate' ? 'btn-primary' : 'btn-outline-dark'}`;
     if(bA) bA.className = `btn btn-sm flex-fill ${activeProfile==='aggressive' ? 'btn-danger' : 'btn-outline-dark'}`;
@@ -250,7 +250,7 @@ export async function saveConfigForm() {
     } catch (e) { alert("Error al guardar."); }
 }
 
-// EXPORTEM FUNCIONS A WINDOW PERQUE FUNCIONIN ELS ONCLICK
+// EXPORTAMOS FUNCIONES A WINDOW PARA QUE FUNCIONEN LOS ONCLICK
 window.loadConfigForm = loadConfigForm;
 window.saveConfigForm = saveConfigForm;
 window.toggleCard = toggleCard;

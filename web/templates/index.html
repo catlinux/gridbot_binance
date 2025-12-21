@@ -1,3 +1,4 @@
+<!-- Archivo: web/templates/index.html -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -5,14 +6,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bot de Grid Trading</title>
     
+    <!-- Favicon: Un robot en SVG incrustado -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
 
+    <!-- Librerías de Estilo (Bootstrap + FontAwesome) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
+    <!-- Estilos Propios -->
     <link rel="stylesheet" href="/static/css/style.css">
+    <!-- El ID permite cambiar el tema dinámicamente desde JS -->
     <link id="theme-stylesheet" rel="stylesheet" href="/static/css/themes/light.css">
     
+    <!-- Librerías de JavaScript (Gráficos, Alertas, JSON5) -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -66,9 +72,9 @@
                         <span class="ms-2 d-none d-sm-inline small opacity-75">Tema</span>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow">
-                        <li><a class="dropdown-item" href="#" onclick="changeTheme('light')">🌞 Original (Light)</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="changeTheme('dark')">🌙 Dark Slate</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="changeTheme('sidebar-dark')">📑 Sidebar Dark</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="changeTheme('light')">🌞 Original (Claro)</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="changeTheme('dark')">🌙 Oscuro (Slate)</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="changeTheme('sidebar-dark')">📑 Barra Lateral (Dark)</a></li>
                     </ul>
                 </div>
 
@@ -227,6 +233,7 @@
 
             </div>
 
+            <!-- WALLET TAB -->
             <div class="tab-pane fade" id="content-wallet" role="tabpanel">
                 <div class="card border-0 shadow-sm mt-3">
                     <div class="card-header bg-white border-bottom py-3">
@@ -258,6 +265,7 @@
                 </div>
             </div>
 
+            <!-- CONFIG TAB -->
             <div class="tab-pane fade" id="content-config" role="tabpanel">
                 <div id="config-alert" class="alert alert-info" style="display:none"></div>
                 
@@ -288,6 +296,20 @@
                                     <div class="form-text">Activa o desactiva el envío de notificaciones.</div>
                                 </div>
                             </div>
+                            
+                            <!-- AÑADIDO: Botón Ajustar Capital -->
+                            <div class="col-12 mt-3">
+                                <hr>
+                                <label class="form-label text-muted small text-uppercase fw-bold">Contabilidad</label>
+                                <div class="d-flex align-items-center">
+                                    <button class="btn btn-outline-info" onclick="openCapitalAdjustment()">
+                                        <i class="fa-solid fa-money-bill-transfer me-2"></i> Ajustar Capital (Ingresos/Retiros)
+                                    </button>
+                                    <div class="form-text ms-3 mb-0">Registrar movimientos de fondos sin afectar al cálculo de Beneficios (PnL).</div>
+                                </div>
+                            </div>
+                            <!-- FIN AÑADIDO -->
+                            
                         </div>
                     </div>
                 </div>
@@ -310,18 +332,22 @@
                                 </button>
                                 <div class="text-center small text-muted mt-1">Apaga el sistema</div>
                             </div>
+                            
+                            <!-- MODIFICADO: Botones PAUSAR i REANUDAR ahora son 'outline' -->
                             <div class="col-md-3">
-                                <button class="btn btn-warning w-100 py-3 fw-bold" onclick="panicStop()">
+                                <button class="btn btn-outline-warning w-100 py-3 fw-bold" onclick="panicStop()">
                                     <i class="fa-solid fa-pause me-2"></i> PAUSAR
                                 </button>
                                 <div class="text-center small text-muted mt-1">Mantiene órdenes, para lógica</div>
                             </div>
                             <div class="col-md-3">
-                                <button class="btn btn-info w-100 py-3 fw-bold text-white" onclick="panicStart()">
+                                <button class="btn btn-outline-info w-100 py-3 fw-bold" onclick="panicStart()">
                                     <i class="fa-solid fa-play me-2"></i> REANUDAR
                                 </button>
                                 <div class="text-center small text-muted mt-1">Continúa desde pausa</div>
                             </div>
+                            <!-- FINAL MODIFICACIÓN -->
+                            
                         </div>
                     </div>
                 </div>
@@ -445,6 +471,9 @@
         </div>
     </footer>
 
+    </div> <!-- Fin Main Container -->
+
+    <!-- MODAL DONACIONES -->
     <div class="modal fade" id="donationModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -476,8 +505,11 @@
         </div>
     </div>
 
+    <!-- Scripts de Bootstrap -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
-    <script type="module" src="/static/js/dashboard.js?v=6"></script>
+    <!-- Lógica de Frontend (Módulos ES6) -->
+    <script type="module" src="/static/js/dashboard.js"></script>
+
 </body>
 </html>

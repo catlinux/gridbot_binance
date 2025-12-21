@@ -1,4 +1,4 @@
-# Arxiu: gridbot_binance/web/server.py
+# Archivo: gridbot_binance/web/server.py
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles 
 from fastapi.templating import Jinja2Templates
@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 app = FastAPI()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Configuración de estáticos y plantillas
 static_dir = os.path.join(BASE_DIR, "static")
 if not os.path.exists(static_dir):
     os.makedirs(os.path.join(static_dir, "css"), exist_ok=True)
@@ -26,9 +27,11 @@ if not os.path.exists(static_dir):
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
+# Instancias globales
 db = BotDatabase()
 bot_instance = None 
 
+# Modelos Pydantic para validación
 class ConfigUpdate(BaseModel):
     content: str
 
@@ -47,7 +50,12 @@ class ClearHistoryRequest(BaseModel):
 class CoinResetRequest(BaseModel):
     symbol: str
 
-# --- FUNCIÓ AUXILIAR CÀLCUL RSI ---
+# NOU MODEL PER AJUSTOS DE CAPITAL
+class BalanceAdjustRequest(BaseModel):
+    asset: str    # EX: "USDC" o "BTC"
+    amount: float # EX: 1000 (Ingrés) o -500 (Retirada)
+
+# --- FUNCIÓN AUXILIAR CÁLCULO RSI ---
 def _calculate_rsi(candles, period=14):
     try:
         if not candles or len(candles) < period + 1:
@@ -77,6 +85,8 @@ def _calculate_rsi(candles, period=14):
 # ----------------------------------
 
 def start_server(bot, host=None, port=None):
+
+#Inicia el servidor web Uvicorn. Recibe la instancia del bot para controlarlo desde la API.
     global bot_instance
     bot_instance = bot
     
@@ -86,7 +96,7 @@ def start_server(bot, host=None, port=None):
         host = os.getenv('WEB_HOST', '127.0.0.1') 
     
     if port is None:
-        port = int(os.getenv('WEB_PORT', 8000))
+        port = int(os.getenv('WEB_PORT', 8001))
         
     uvicorn.run(app, host=host, port=port, log_level="error")
 
@@ -99,12 +109,18 @@ def format_uptime(seconds):
     if days > 0: return f"{days}d {hours}h {mins}m"
     return f"{hours}h {mins}m"
 
+# --- RUTAS DE PÁGINA (VISTAS) ---
+
 @app.get("/", response_class=HTMLResponse)
 def read_root(request: Request):
+    # Pasamos lista de pares activos a la plantilla para generar pestañas
     return templates.TemplateResponse("index.html", {"request": request})
+
+# --- API ENDPOINTS (DATOS) ---
 
 @app.get("/api/status")
 def get_status():
+    # Endpoint principal del Dashboard.
     if not bot_instance: return {"status": "Offline"}
     
     try:
@@ -112,13 +128,33 @@ def get_status():
         if bot_instance.is_running:
             status_text = "Paused" if bot_instance.is_paused else "Running"
 
+        # OPTIMITZACIÓ: Llegir preus de la DB (snapshot) primer
         prices = db.get_all_prices()
+        
+        # --- OPTIMITZACIÓ CRÍTICA (ANTI-BAN) ---
+        # Descarreguem TOTS els saldos en 1 sola petició a l'API
+        # en lloc de fer-ne una per cada moneda dins del bucle.
+        all_balances_cache = {}
+        try:
+            # Només si tenim connexió, demanem balances
+            if bot_instance.connector and bot_instance.connector.exchange:
+                all_balances_cache = bot_instance.connector.exchange.fetch_balance()
+        except: pass
+        
+        # Helper per llegir del 'cache' d'aquesta petició
+        def get_bal_safe(asset):
+            if not all_balances_cache: return 0.0
+            # --- CORRECCIÓ: Sumar FREE + USED (Bloquejat en ordres) ---
+            data = all_balances_cache.get(asset, {})
+            free = float(data.get('free', 0.0))
+            used = float(data.get('used', 0.0))
+            return free + used
+        # ---------------------------------------
+
         portfolio = []
         current_total_equity = 0.0
         
-        try:
-            usdc_balance = bot_instance.connector.get_total_balance('USDC')
-        except: usdc_balance = 0.0
+        usdc_balance = get_bal_safe('USDC')
         
         portfolio.append({"name": "USDC", "value": round(usdc_balance, 2)})
         current_total_equity += usdc_balance
@@ -133,9 +169,13 @@ def get_status():
         for symbol in pairs_to_check:
             base = symbol.split('/')[0]
             try:
-                qty = bot_instance.connector.get_total_balance(base)
+                # Ara fem servir la funció local (sense petició de xarxa)
+                qty = get_bal_safe(base)
+                
+                # Usem el preu de la DB si existeix
                 price = prices.get(symbol, 0.0)
                 
+                # Si és 0 i és crític, demanem a l'API (només fallback)
                 if price == 0 and bot_instance.connector.exchange: 
                     price = bot_instance.connector.fetch_current_price(symbol)
                 
@@ -148,6 +188,7 @@ def get_status():
                         current_total_equity += val
             except: pass
 
+        # Estadísticas Globales vs Sesión (Llegides de DB local -> RÀPID)
         global_stats = db.get_stats(from_timestamp=0)
         session_start_ts = bot_instance.global_start_time
         session_stats = db.get_stats(from_timestamp=session_start_ts)
@@ -160,6 +201,7 @@ def get_status():
         first_run_ts = db.get_first_run_timestamp()
         total_uptime_str = format_uptime(time.time() - first_run_ts)
 
+        # Datos por estrategia
         strategies_data = []
         global_cash_flow = global_stats['per_coin_stats']['cash_flow']
         session_cash_flow = session_stats['per_coin_stats']['cash_flow']
@@ -186,13 +228,16 @@ def get_status():
                     init_val_coin = curr_val
                     db.set_coin_initial_balance(symbol, init_val_coin)
 
+                # Cálculo PnL Global
                 cf_global = global_cash_flow.get(symbol, 0.0)
                 strat_pnl_global = (curr_val - init_val_coin) + cf_global
 
+                # Cálculo PnL Sesión
                 cf_session = session_cash_flow.get(symbol, 0.0)
                 qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
                 strat_pnl_session = (qty_delta * curr_price) + cf_session
 
+                # Limpieza de valores fantasma
                 if trades_count == 0 and abs(strat_pnl_global) > (curr_val * 0.5) and curr_val > 0:
                      strat_pnl_global = 0.0
 
@@ -276,6 +321,8 @@ def get_balance_history_api():
 @app.get("/api/orders")
 def get_all_orders():
     try:
+        # OPTIMITZACIÓ: Llegir directament de la DB, que s'actualitza cada cicle del bot.
+        # Això és instantani i no carrega l'exchange.
         raw_orders = db.get_all_active_orders()
         prices = db.get_all_prices()
         enhanced_orders = []
@@ -292,6 +339,7 @@ def get_all_orders():
                     continue
 
             current_price = prices.get(symbol, 0.0)
+            # Només si la DB està buida (cas extrany), preguntem.
             if current_price == 0 and bot_instance and bot_instance.is_running:
                  current_price = bot_instance.connector.fetch_current_price(symbol)
 
@@ -314,6 +362,8 @@ def get_wallet_data():
         return []
     
     try:
+        # Aquesta funció és inevitablement lenta perquè necessita precisió total
+        # Però com que no es crida automàticament cada segon (només a la pestanya Wallet), està bé.
         balances = bot_instance.connector.exchange.fetch_balance()
         if not balances: return []
         
@@ -361,6 +411,7 @@ def get_wallet_data():
 
 @app.post("/api/liquidate_asset")
 def liquidate_asset_api(req: LiquidateRequest):
+    # Venta de Pánico Selectiva.
     if not bot_instance or not bot_instance.connector.exchange:
         raise HTTPException(status_code=503, detail="Bot no conectado")
     
@@ -399,6 +450,7 @@ def liquidate_asset_api(req: LiquidateRequest):
 def clear_history_api(req: ClearHistoryRequest):
     symbol = req.symbol
     keep_ids = []
+    # Intentamos salvar los trades vinculados a ventas abiertas
     try:
         with open('config/config.json5', 'r') as f: config = json5.load(f)
         pair_conf = next((p for p in config['pairs'] if p['symbol'] == symbol), None)
@@ -423,22 +475,72 @@ def clear_history_api(req: ClearHistoryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- NOUS ENDPOINTS PER MANTENIMENT DE DADES ---
+# --- ENDPOINTS MANTENIMIENTO ---
+
+@app.post("/api/balance/adjust")
+def adjust_balance_api(req: BalanceAdjustRequest):
+    """
+    Gestiona Ingressos (+) i Retirades (-) per no afectar el PnL (Benefici).
+    """
+    try:
+        asset = req.asset.upper()
+        amount = req.amount
+        
+        # 1. Calculem el valor en USDC de l'ajust
+        value_usdc = 0.0
+        
+        if asset == 'USDC' or asset == 'USDT':
+            value_usdc = amount
+        elif bot_instance and bot_instance.connector.exchange:
+            # Si és una moneda (ex: he ingressat 0.5 BTC), busquem el preu
+            symbol = f"{asset}/USDC"
+            price = bot_instance.connector.fetch_current_price(symbol)
+            value_usdc = amount * price
+            
+            # També ajustem el "cost inicial" d'aquesta moneda en particular
+            # perquè el PnL de la moneda no es dispari.
+            db.adjust_coin_initial_balance(symbol, value_usdc)
+        
+        # 2. Ajustem els balanços inicials GLOBALS i de SESSIÓ
+        # Si ingresso 1000, el balanç inicial puja 1000 -> PnL (Actual - Inicial) es manté igual.
+        db.adjust_balance_history(value_usdc)
+        
+        tipo = "Ingrés" if amount > 0 else "Retirada"
+        log.info(f"💰 AJUST CAPITAL: {tipo} de {amount} {asset} ({value_usdc:.2f} USDC)")
+        send_msg(f"📝 <b>CAPITAL {tipo.upper()}</b>\nS'ha ajustat la comptabilitat: {amount} {asset}")
+        
+        return {"status": "success", "message": f"Comptabilitat ajustada ({value_usdc:.2f} USDC)."}
+        
+    except Exception as e:
+        log.error(f"Error ajustant capital: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/reset_stats")
 def reset_stats_api():
     try:
+        # 1. Borrado de base de datos
         db.reset_all_statistics()
+        
+        # 2. RE-SNAPSHOT INMEDIATO (Correcció PnL Fantasma)
+        # Forçamos que el valor inicial sigui EXACTAMENT el que tenim ara mateix.
         if bot_instance:
             bot_instance.global_start_time = time.time()
             bot_instance.levels = {} 
-            if bot_instance.is_running:
-                db.set_session_start_time(bot_instance.global_start_time)
-                initial_equity = bot_instance.calculate_total_equity()
-                db.set_session_start_balance(initial_equity)
+            
+            # Recalculamos equidad total YA
+            initial_equity = bot_instance.calculate_total_equity()
+            
+            # Guardamos como punto de partida Global y Sesión
+            db.set_session_start_balance(initial_equity)
+            db.set_global_start_balance_if_not_exists(initial_equity)
+            
+            # Forçamos snapshot per a cada moneda activa també
+            if bot_instance.active_pairs:
+                log.info("📸 Forçant snapshot inicial de preus per Reset...")
                 bot_instance.capture_initial_snapshots()
-        send_msg("⚠️ <b>RESET TOTAL</b>\nSe han borrado todas las estadísticas.")
-        return {"status": "success", "message": "Reset Total completado."}
+
+        send_msg("⚠️ <b>RESET TOTAL</b>\nSe han borrado todas las estadísticas y reiniciado el punto 0.")
+        return {"status": "success", "message": "Reset Total completado. PnL a 0."}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/reset/chart/global")
@@ -451,12 +553,12 @@ def reset_global_chart_api():
 @app.post("/api/reset/chart/session")
 def reset_session_chart_api():
     try:
-        # Reiniciar sessió (afecta gràfica i PnL sessió)
+        # Reiniciar sesión (afecta gráfica y PnL sesión)
         new_time = time.time()
         db.set_session_start_time(new_time)
         if bot_instance:
             bot_instance.global_start_time = new_time
-            # Recalcular balanç inicial sessió
+            # Recalcular balance inicial sesión
             initial_equity = bot_instance.calculate_total_equity()
             db.set_session_start_balance(initial_equity)
         return {"status": "success", "message": "Gráfica/PnL Sesión reiniciados."}
@@ -473,14 +575,14 @@ def reset_global_pnl_api():
 def refresh_orders_api():
     try:
         db.clear_orders_cache()
-        return {"status": "success", "message": "Caché de órdenes limpiada. Se recargarán en breve."}
+        return {"status": "success", "message": "Caché de órdenes limpiada."}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/reset/coin/session")
 def reset_coin_session_api(req: CoinResetRequest):
     try:
         db.set_coin_session_start(req.symbol, time.time())
-        # També reiniciem el balanç inicial d'aquesta moneda per al PnL
+        # Tambien reiniciamos el balance inicial de esta moneda para el PnL
         if bot_instance:
              try:
                 base = req.symbol.split('/')[0]
@@ -495,7 +597,7 @@ def reset_coin_session_api(req: CoinResetRequest):
 def reset_coin_global_api(req: CoinResetRequest):
     try:
         db.delete_trades_for_symbol(req.symbol)
-        # També reiniciem saldo inicial per que el PnL global no quedi "boig"
+        # También reiniciamos el saldo inicial para que el PnL global no quede "loco"
         if bot_instance:
              try:
                 base = req.symbol.split('/')[0]
@@ -506,18 +608,20 @@ def reset_coin_global_api(req: CoinResetRequest):
         return {"status": "success", "message": f"Historial Global borrado para {req.symbol}."}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
-# ---------------------------------------------
+# --- ANÁLISIS TÉCNICO ---
 
 @app.get("/api/strategy/analyze/")
 def analyze_strategy(symbol: str, timeframe: str = '4h'):
     try:
         rsi = 50.0
+        # Intentamos usar el bot para descargar velas
         if bot_instance and bot_instance.connector.exchange:
             try: 
-                raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=1000)
+                raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=500)
                 if raw_candles: rsi = _calculate_rsi(raw_candles)
             except: pass
         
+        # Sugerencias básicas
         base_s = {"conservative": 1.0, "moderate": 0.8, "aggressive": 0.5}
         if timeframe == '15m': base_s = {"conservative": 0.6, "moderate": 0.4, "aggressive": 0.25}
         elif timeframe == '1h': base_s = {"conservative": 0.8, "moderate": 0.6, "aggressive": 0.35}
@@ -553,12 +657,15 @@ def close_order_api(req: CloseOrderRequest):
 @app.get("/api/details/{symbol:path}")
 def get_pair_details(symbol: str, timeframe: str = '15m'):
     try:
+        # OPTIMITZACIÓ: Llegim les dades (espelmes i ordres) de la DB primer
+        # Així la web carrega instantàniament sense esperar l'API de Binance.
         data = db.get_pair_data(symbol)
-        raw_candles = []
-        if bot_instance and bot_instance.is_running:
-            try: raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=1000)
+        
+        raw_candles = data.get('candles', [])
+        # Si no hi ha dades guardades (bot apagat o nova moneda), només llavors demanem.
+        if not raw_candles and bot_instance and bot_instance.is_running:
+            try: raw_candles = bot_instance.connector.fetch_candles(symbol, timeframe=timeframe, limit=500)
             except: pass
-        if not raw_candles: raw_candles = data['candles']
         
         chart_data = []
         for candle in raw_candles:
@@ -569,7 +676,7 @@ def get_pair_details(symbol: str, timeframe: str = '15m'):
         global_pnl = 0.0
         
         if bot_instance:
-            current_price = data['price']
+            current_price = data.get('price', 0.0)
             if current_price == 0 and bot_instance.is_running: 
                 current_price = bot_instance.connector.fetch_current_price(symbol)
 
@@ -590,7 +697,7 @@ def get_pair_details(symbol: str, timeframe: str = '15m'):
 
                 global_pnl = (current_val - init_val) + cf_global
                 
-                # Sessiò: Mirem si aquesta moneda té un inici específic
+                # Sesión: Miramos si esta moneda tiene un inicio específico
                 coin_session_ts = db.get_coin_session_start(symbol)
                 if coin_session_ts == 0: coin_session_ts = bot_instance.global_start_time
                 
@@ -601,11 +708,11 @@ def get_pair_details(symbol: str, timeframe: str = '15m'):
 
         return {
             "symbol": symbol,
-            "price": data['price'],
-            "open_orders": data['open_orders'],
-            "trades": data['trades'],
+            "price": data.get('price', 0.0), # Preu directe DB
+            "open_orders": data.get('open_orders', []), # Ordres directe DB
+            "trades": data.get('trades', []),
             "chart_data": chart_data,
-            "grid_lines": data['grid_levels'],
+            "grid_lines": data.get('grid_levels', []),
             "session_pnl": round(pnl_value, 2), 
             "global_pnl": round(global_pnl, 2)   
         }
@@ -632,6 +739,8 @@ def save_config(config: ConfigUpdate):
         send_msg("💾 <b>CONFIGURACIÓN GUARDADA</b>\nSe han aplicado cambios desde la web.")
         return {"status": "success", "message": "Configuración guardada y aplicada."}
     except Exception as e: raise HTTPException(status_code=400, detail=f"Error JSON5: {e}")
+
+# --- BOTONES DE PÁNICO ---
 
 @app.post("/api/panic/stop")
 def panic_stop_api():

@@ -1,3 +1,5 @@
+// Archivo: gridbot_binance/web/static/js/utils.js
+
 export const fmtUSDC = (num) => { 
     if (num === undefined || num === null) return '--'; 
     return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); 

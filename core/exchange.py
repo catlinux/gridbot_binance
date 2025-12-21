@@ -1,11 +1,12 @@
-# Arxiu: gridbot_binance/core/exchange.py
+# Archivo: gridbot_binance/core/exchange.py
 import ccxt
 import os
 import json5
+import time
 from dotenv import load_dotenv
 from utils.logger import log
 
-# Carreguem .env (override=True permet recarregar si canvia)
+# Cargamos .env (override=True permite recargar si cambia)
 load_dotenv(dotenv_path='config/.env', override=True)
 
 class BinanceConnector:
@@ -75,21 +76,28 @@ class BinanceConnector:
             return
 
         try:
+            # CONFIGURACIÓN MEJORADA PARA EVITAR ERRORES DE CONEXIÓN Y TIMESTAMPS
             self.exchange = ccxt.binance({
                 'apiKey': api_key,
                 'secret': secret_key,
                 'enableRateLimit': True, 
-                'options': { 'defaultType': 'spot', 'adjustForTimeDifference': True }
+                'timeout': 30000, # 30 segundos de timeout (evita colgarse)
+                'options': { 
+                    'defaultType': 'spot', 
+                    'adjustForTimeDifference': True, # Sincroniza reloj automáticamente
+                    'recvWindow': 60000              # Margen de 60s por latencia de red
+                }
             })
 
             if use_testnet:
                 self.exchange.set_sandbox_mode(True)
             
+            # Verificación inicial
             self.exchange.fetch_time()
             log.success(f"✅ Conexión EXITOSA con Binance ({'TESTNET' if use_testnet else 'REAL'}).")
 
         except Exception as e:
-            log.error(f"❌ Error de conexión: {e}")
+            log.error(f"❌ Error de conexión CRÍTICO: {e}")
             self.exchange = None
 
     def validate_connection(self):
@@ -100,12 +108,28 @@ class BinanceConnector:
         except Exception:
             return False
 
+    # --- GESTOR DE ERRORES CENTRALIZADO ---
+    def _handle_api_error(self, e, context=""):
+        err_str = str(e).lower()
+        if "418" in err_str or "too much request weight" in err_str or "-1003" in err_str:
+            log.error(f"🚨 IP BANEADA TEMPORALMENTE POR BINANCE (418).")
+            log.warning("⏳ Pausando el bot durante 2 minutos para enfriar la conexión...")
+            time.sleep(120) # Espera 2 minutos
+            log.success("🔄 Reanudando operaciones...")
+        elif "content-length" in err_str or "json" in err_str:
+            # Ignoramos errores puntuales de red
+            pass
+        else:
+            log.error(f"Error API ({context}): {e}")
+    # --------------------------------------------
+
     def get_asset_balance(self, asset):
         if not self.exchange: return 0.0
         try:
             balance = self.exchange.fetch_balance()
             return float(balance.get(asset, {}).get('free', 0.0))
         except Exception as e:
+            self._handle_api_error(e, f"balance {asset}")
             return 0.0
 
     def get_total_balance(self, asset):
@@ -118,14 +142,34 @@ class BinanceConnector:
                 return free + used
             return 0.0
         except Exception as e:
+            self._handle_api_error(e, f"total balance {asset}")
             return 0.0
 
+    # --- NUEVA FUNCIÓN OPTIMIZADA: DESCARGA EN GRUPO (BATCH) ---
+    def fetch_batch_prices(self, symbols_list):
+        """Pide precios de múltiples monedas en UNA sola petición API"""
+        if not self.exchange or not symbols_list: return {}
+        try:
+            # fetch_tickers (plural) obtiene datos de múltiples pares a la vez
+            tickers = self.exchange.fetch_tickers(symbols_list)
+            prices = {}
+            for sym, data in tickers.items():
+                if 'last' in data and data['last']:
+                    prices[sym] = float(data['last'])
+            return prices
+        except Exception as e:
+            self._handle_api_error(e, "fetch_batch_prices")
+            return {}
+    # -----------------------------------------------------------
+
     def fetch_current_price(self, symbol):
+        # Mantenemos esta por compatibilidad, pero recomendamos usar batch
         if not self.exchange: return 0.0
         try:
             ticker = self.exchange.fetch_ticker(symbol)
             return float(ticker['last'])
         except Exception as e:
+            self._handle_api_error(e, f"price {symbol}")
             return 0.0
 
     def place_order(self, symbol, side, amount, price):
@@ -139,7 +183,7 @@ class BinanceConnector:
              log.error(f"FONDOS INSUFICIENTES: {e}")
              return None
         except Exception as e:
-            log.error(f"Error colocando orden: {e}")
+            self._handle_api_error(e, "place order")
             return None
 
     def place_market_sell(self, symbol, amount):
@@ -148,39 +192,33 @@ class BinanceConnector:
             log.warning(f"Ejecutando Venta a Mercado {symbol} Cantidad: {amount}")
             return self.exchange.create_order(symbol, 'market', 'sell', amount)
         except Exception as e:
-            log.error(f"Error en Market Sell: {e}")
+            self._handle_api_error(e, "market sell")
             return None
 
-    # --- FUNCIÓ NOVA ---
     def place_market_buy(self, symbol, amount_usdc):
-        """Compra a mercat especificant quants USDC volem gastar (quoteOrderQty)"""
+        """Compra a mercado especificando cuántos USDC queremos gastar"""
         if not self.exchange: return None
         try:
             log.warning(f"Ejecutando COMPRA INICIAL a Mercado {symbol} Valor: {amount_usdc} USDC")
-            # En Binance, per comprar X valor de quote (USDC), fem servir create_order amb params
-            # Nota: CCXT gestiona 'cost' o 'quoteOrderQty' depenent de l'exchange, per simplificar
-            # calculem quantitat base aproximada o usem el mètode específic si cal.
-            # Per seguretat amb CCXT genèric, calcularem la quantitat base.
             
             price = self.fetch_current_price(symbol)
             if price == 0: return None
             
             amount_base = amount_usdc / price
-            # Apliquem precisió
+            # Aplicamos precisión del exchange
             amount_base = self.exchange.amount_to_precision(symbol, amount_base)
             
             return self.exchange.create_order(symbol, 'market', 'buy', amount_base)
         except Exception as e:
-            log.error(f"Error en Market Buy: {e}")
+            self._handle_api_error(e, "market buy")
             return None
-    # -------------------
 
     def cancel_order(self, order_id, symbol):
         if not self.exchange: return None
         try:
             return self.exchange.cancel_order(order_id, symbol)
         except Exception as e:
-            log.error(f"Error cancelando orden {order_id}: {e}")
+            self._handle_api_error(e, f"cancel {order_id}")
             return None
 
     def cancel_all_orders(self, symbol):
@@ -190,8 +228,9 @@ class BinanceConnector:
         except ccxt.OrderNotFound:
             return None
         except Exception as e:
+            # Ignoramos error específico de Binance cuando no hay órdenes (-2011)
             if "-2011" in str(e): return None
-            log.error(f"Error cancelando órdenes {symbol}: {e}")
+            self._handle_api_error(e, f"cancel all {symbol}")
             return None
             
     def fetch_open_orders(self, symbol):
@@ -199,14 +238,16 @@ class BinanceConnector:
         try:
             return self.exchange.fetch_open_orders(symbol)
         except Exception as e:
+            self._handle_api_error(e, f"open orders {symbol}")
             return []
 
-    def fetch_candles(self, symbol, timeframe='15m', limit=50):
+    # Cambio solicitado: Límite por defecto a 500
+    def fetch_candles(self, symbol, timeframe='15m', limit=500):
         if not self.exchange: return []
         try:
             return self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
         except Exception as e:
-            log.error(f"Error obteniendo velas: {e}")
+            self._handle_api_error(e, f"candles {symbol}")
             return []
 
     def fetch_my_trades(self, symbol, limit=20):
@@ -214,4 +255,5 @@ class BinanceConnector:
         try:
             return self.exchange.fetch_my_trades(symbol, limit=limit)
         except Exception as e:
+            self._handle_api_error(e, f"trades {symbol}")
             return []

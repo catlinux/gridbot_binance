@@ -1,23 +1,23 @@
-// Arxiu: gridbot_binance/web/static/js/charts.js
+// Archivo: gridbot_binance/web/static/js/charts.js
 import { fmtUSDC, fmtInt } from './utils.js';
 
-// Cache per a instàncies de Lightweight Charts (Veles/Línies)
+// Cache para instancias de Lightweight Charts (Velas/Líneas)
 let chartInstances = {};
 
-// --- GESTIÓ DE COLORS (TEMA) ---
+// --- GESTIÓN DE COLORES (TEMA) ---
 function getThemeColors() {
     const theme = localStorage.getItem('gridbot_theme');
     const isDark = theme && theme !== 'default' && theme !== 'light';
     
     return isDark ? {
-        bg: '#2c3038',   // Fons fosc
-        text: '#b9b9c3', // Text gris clar
+        bg: '#2c3038',   // Fondo oscuro
+        text: '#b9b9c3', // Texto gris claro
         grid: '#3b4047', 
         border: '#3b4047',
         up: '#0ecb81',
         down: '#f6465d'
     } : {
-        bg: '#ffffff',   // Blanc
+        bg: '#ffffff',   // Blanco
         text: '#333333',
         grid: '#f0f3fa',
         border: '#d1d3e2',
@@ -26,13 +26,13 @@ function getThemeColors() {
     };
 }
 
-// --- MILLORA DONUTS (ECharts) ---
-// Ara són responsive i no fan parpelleig
+// --- MEJORA DONUTS (ECharts) ---
+// Ahora son responsive y no parpadean
 export function renderDonut(domId, data, isCurrency = false) {
     const dom = document.getElementById(domId);
     if (!dom) return;
     
-    // 1. REUTILITZAR INSTÀNCIA: No destruïm si ja existeix
+    // 1. REUTILIZAR INSTANCIA: No destruimos si ya existe
     let chart = echarts.getInstanceByDom(dom);
     if (!chart) {
         chart = echarts.init(dom);
@@ -43,12 +43,12 @@ export function renderDonut(domId, data, isCurrency = false) {
     const chartData = (data && data.length > 0) ? data : [{value: 0, name: 'Sin Datos'}];
     const colors = getThemeColors();
 
-    // 2. DETECCIÓ MÒBIL: Ajustem disseny segons pantalla
+    // 2. DETECCIÓN MÓVIL: Ajustem disseny segons pantalla
     const isMobile = window.innerWidth < 768; // Menys de 768px és mòbil/tablet vertical
 
     // Configuració dinàmica
     const option = {
-        // El tooltip es manté igual
+        // El tooltip se mantiene igual
         tooltip: { 
             trigger: 'item', 
             formatter: function(params) { 
@@ -56,7 +56,7 @@ export function renderDonut(domId, data, isCurrency = false) {
                 return `${params.name}: ${val} (${params.percent}%)`; 
             } 
         },
-        // Llegenda: Al costat en PC, a sota en Mòbil (per evitar talls)
+        // Leyenda: Al lado en PC, a bajo en Móvil (para evitar cortes)
         legend: { 
             show: true,
             orient: isMobile ? 'horizontal' : 'vertical', 
@@ -67,7 +67,7 @@ export function renderDonut(domId, data, isCurrency = false) {
         },
         series: [{ 
             type: 'pie', 
-            // Radi i Centre ajustats per a mòbil
+            // Radio y Centro ajustados para móvil
             radius: isMobile ? ['35%', '60%'] : ['40%', '80%'], 
             center: isMobile ? ['50%', '45%'] : ['60%', '50%'], 
             
@@ -76,12 +76,12 @@ export function renderDonut(domId, data, isCurrency = false) {
             emphasis: { 
                 label: { 
                     show: true, 
-                    fontSize: isMobile ? 14 : 16, // Text una mica més petit en mòbil
+                    fontSize: isMobile ? 14 : 16, // Texto un poco más pequeño para móvil
                     fontWeight: 'bold', 
                     color: colors.text 
                 } 
             }, 
-            // La vora del mateix color que el fons fa efecte de separació net
+            // El borde del mismo color que el fondo hace efecto de separación más limpio
             itemStyle: { 
                 borderColor: colors.bg, 
                 borderWidth: 2 
@@ -90,7 +90,7 @@ export function renderDonut(domId, data, isCurrency = false) {
         }] 
     };
     
-    // 3. ACTUALITZACIÓ SUAU: setOption fa la màgia sense esborrar
+    // 3. ACTUALITZACIÓN SUAVE: setOption hace la mágia sin borrar
     chart.setOption(option);
 }
 
@@ -129,7 +129,7 @@ export function renderLineChart(domId, data, color) {
             chart.timeScale().fitContent(); 
         }).observe(dom);
     } else {
-        // Actualitzem colors si cal (per canvi de tema)
+        // Actualizamos colores si hace falta (por cambio de tema)
         chartInstances[domId].chart.applyOptions({
             layout: { background: { type: 'solid', color: colors.bg }, textColor: colors.text },
             grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } }
@@ -160,6 +160,7 @@ export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], c
     dom.style.position = 'relative';
     const colors = getThemeColors();
 
+    // 1. CREACIÓN O RECUPERACIÓN DE LA INSTANCIA
     if (!chartInstances[domId]) {
         dom.innerHTML = '';
         const chart = LightweightCharts.createChart(dom, {
@@ -192,7 +193,7 @@ export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], c
             chart.applyOptions({ width, height });
         }).observe(dom);
     } else {
-        // Actualitzem colors
+        // Actualizamos colores
         chartInstances[domId].chart.applyOptions({
             layout: { background: { type: 'solid', color: colors.bg }, textColor: colors.text },
             grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
@@ -204,7 +205,7 @@ export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], c
 
     const { chart, axisSeries } = chartInstances[domId];
 
-    // Canvi de tipus
+    // Cambio de tipo
     if (chartInstances[domId].activeType !== chartType) {
         chart.removeSeries(chartInstances[domId].mainSeries);
         let newSeries;
@@ -218,15 +219,17 @@ export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], c
         chartInstances[domId].activeLines = [];
     }
 
+    // Limpiar líneas anteriores
     const mainSeries = chartInstances[domId].mainSeries;
 
-    // Dades
+    // Dibujar Grid (Líneas punteadas)
     const formattedData = data.map(d => {
         const dateParts = d[0].split(/[- :]/); 
         const dateObj = new Date(dateParts[0], dateParts[1]-1, dateParts[2], dateParts[3], dateParts[4]);
         return { time: dateObj.getTime() / 1000, open: parseFloat(d[1]), high: parseFloat(d[4]), low: parseFloat(d[3]), close: parseFloat(d[2]), value: parseFloat(d[2]) };
     });
 
+    // Dibujar Órdenes Activas
     const uniqueData = [];
     const seenTimes = new Set();
     formattedData.sort((a, b) => a.time - b.time);
@@ -237,7 +240,7 @@ export function renderCandleChart(safeSym, data, gridLines, activeOrders = [], c
     mainSeries.setData(uniqueData);
     axisSeries.setData(uniqueData.map(d => ({ time: d.time, value: d.close })));
 
-    // Línies
+    // Líneas
     chartInstances[domId].activeLines.forEach(line => mainSeries.removePriceLine(line));
     chartInstances[domId].activeLines = [];
 
@@ -270,7 +273,7 @@ export function resetChartZoom(safeSym) {
     }
 }
 
-// Destrucció total
+// Destrucción total
 export function destroyChart(safeSym) {
     const domId = `chart-${safeSym}`;
     if (chartInstances[domId]) {

@@ -1,16 +1,16 @@
-// Arxiu: gridbot_binance/web/static/js/dashboard.js
+// Archivo: gridbot_binance/web/static/js/dashboard.js
 import { fmtUSDC, fmtPrice, fmtInt, fmtCrypto, fmtPct, updateColorValue } from './utils.js';
 import { renderDonut, renderLineChart, renderCandleChart, resetChartZoom, destroyChart } from './charts.js';
 import { loadConfigForm, saveConfigForm, toggleCard, changeRsiTf, applyStrategy, setManual, analyzeSymbol } from './config.js';
 
-// --- ESTAT GLOBAL ---
+// --- ESTADO GLOBAL ---
 let currentMode = 'home';
 let currentTimeframe = '15m';
 let currentChartType = 'candles'; 
 let dataCache = {}; 
 let fullGlobalHistory = []; 
 
-// --- EXPORTAR A WINDOW ---
+// --- EXPORTAR A WINDOW (Perquè funcioni l'onclick de l'HTML) ---
 window.loadConfigForm = loadConfigForm;
 window.saveConfigForm = saveConfigForm;
 window.toggleCard = toggleCard;
@@ -40,8 +40,9 @@ window.refreshOrders = refreshOrders;
 window.resetCoinSession = resetCoinSession;
 window.resetCoinGlobal = resetCoinGlobal;
 window.changeTheme = changeTheme;
+window.openCapitalAdjustment = openCapitalAdjustment; 
 
-// --- FUNCIONS PRINCIPALS ---
+// --- FUNCIONES PRINCIPALES ---
 
 async function init() {
     try {
@@ -72,14 +73,11 @@ function syncTabs(activePairs) {
     activePairs.forEach(sym => ensureTabExists(sym));
 }
 
-// --- MODIFICACIÓ: ICONES DE MONEDES ---
 function ensureTabExists(symbol) {
     const safe = symbol.replace('/', '_');
     if (document.getElementById(`content-${safe}`)) return;
     
-    // 1. Extraiem el nom base (ex: "BTC" de "BTC/USDC") i el passem a minúscules
     const baseCoin = symbol.split('/')[0].toLowerCase();
-    // 2. URL del CDN d'icones (utilitzem Cryptologos via jsDelivr)
     const iconUrl = `https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@1a63530be6e374711a8554f31b17e4cb92c25fa5/128/color/${baseCoin}.png`;
 
     const tabList = document.getElementById('mainTabs');
@@ -87,7 +85,6 @@ function ensureTabExists(symbol) {
     const li = document.createElement('li');
     li.className = 'nav-item';
     
-    // 3. Creem el botó amb la imatge. Si falla la imatge (onerror), posem una icona genèrica.
     li.innerHTML = `
         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#content-${safe}" type="button" onclick="setMode('${symbol}')">
             <img src="${iconUrl}" class="coin-icon" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block'">
@@ -184,6 +181,8 @@ function setMode(m) {
     else if(m!=='config') loadSymbol(m);
 }
 
+// --- ACCIONES ---
+
 function setTimeframe(tf) {
     currentTimeframe = tf;
     document.querySelectorAll('.tf-btn').forEach(b => { b.classList.remove('active'); if(b.innerText.toLowerCase()===tf) b.classList.add('active'); });
@@ -238,6 +237,56 @@ function filterHistory(hours) {
     renderLineChart('balanceChartGlobal', filteredData, '#3b82f6');
 }
 
+// --- NOU: GESTIÓ D'INGRESSOS I RETIRADES ---
+async function openCapitalAdjustment() {
+    const { value: formValues } = await Swal.fire({
+        title: 'Gestió de Capital',
+        html:
+            '<p class="small text-muted">Registra ingressos o retirades per no afectar al càlcul de beneficis (PnL).</p>' +
+            '<input id="swal-asset" class="swal2-input" placeholder="Actiu (ex: USDC)" value="USDC">' +
+            '<input id="swal-amount" type="number" step="any" class="swal2-input" placeholder="Quantitat (+ Ingrés / - Retirada)">',
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Registrar',
+        cancelButtonText: 'Cancel·lar',
+        preConfirm: () => {
+            return [
+                document.getElementById('swal-asset').value,
+                document.getElementById('swal-amount').value
+            ]
+        }
+    });
+
+    if (formValues) {
+        const asset = formValues[0];
+        const amount = parseFloat(formValues[1]);
+        
+        if (!asset || isNaN(amount)) {
+            Swal.fire('Error', 'Dades invàlides', 'error');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/balance/adjust', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ asset: asset, amount: amount })
+            });
+            const data = await res.json();
+            
+            if (res.ok) {
+                Swal.fire('Registrat', data.message, 'success');
+                loadHome(); // Recarreguem per veure canvis
+            } else {
+                Swal.fire('Error', data.detail, 'error');
+            }
+        } catch (e) {
+            Swal.fire('Error', 'Error de connexió', 'error');
+        }
+    }
+}
+
+// --- WALLET ---
 async function loadHome() {
     try {
         const res = await fetch('/api/status');
@@ -281,6 +330,7 @@ async function loadHome() {
     } catch(e) { console.error(e); }
 }
 
+// --- FUNCIONES CONTROL SISTEMA ---
 async function loadSymbol(symbol) {
     const safe = symbol.replace('/', '_');
     try {
@@ -306,6 +356,7 @@ async function loadSymbol(symbol) {
             return `<tr><td><span class="badge bg-secondary">${idBadge}</span></td><td>${new Date(t.timestamp).toLocaleTimeString()}</td><td><span class="badge ${t.side=='buy'?'bg-buy':'bg-sell'}">${t.side.toUpperCase()}</span></td><td>${fmtPrice(t.price)}</td><td>${fmtUSDC(t.cost)}</td></tr>`;
         }).join('');
 
+// --- MANTENIMIENTO ---
     } catch(e) { console.error(e); }
 }
 
@@ -316,12 +367,27 @@ async function closeOrder(s, i, side, a) { const result = await Swal.fire({ titl
 async function liquidateAsset(a) { const result = await Swal.fire({ title: `¿Liquidar ${a}?`, text: "Se cancelarán las órdenes y se venderá todo a mercado.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, vender todo' }); if (result.isConfirmed) { postAction('/api/liquidate_asset', { asset: a }, loadWallet); } }
 async function clearHistory(s) { const result = await Swal.fire({ title: '¿Borrar Historial?', text: `Se eliminarán los trades antiguos de ${s} de la base de datos.`, icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, borrar' }); if (result.isConfirmed) { postAction('/api/history/clear', { symbol: s }); } }
 async function resetStatistics() { const result = await Swal.fire({ title: '¿RESET TOTAL?', text: "ESTO ES IRREVERSIBLE. Borrará todo el historial y gráficas.", icon: 'error', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, reiniciar todo' }); if (result.isConfirmed) { postAction('/api/reset_stats', {}, () => location.reload()); } }
-async function panicStop() { const result = await Swal.fire({ title: '¿Pausar Operaciones?', text: "El bot dejará de analizar el mercado.", icon: 'warning', showCancelButton: true, confirmButtonText: 'Pausar' }); if (result.isConfirmed) postAction('/api/panic/stop'); }
-async function panicStart() { postAction('/api/panic/start'); }
+
+// --- FUNCIONES MODIFICADAS PARA ESPERAR CAMBIO DE ESTADO ---
+async function panicStop() { 
+    const result = await Swal.fire({ title: '¿Pausar Operaciones?', text: "El bot dejará de analizar el mercado.", icon: 'warning', showCancelButton: true, confirmButtonText: 'Pausar' }); 
+    if (result.isConfirmed) executeEngineAction('/api/panic/stop', 'Pausando...', 'Paused'); 
+}
+async function panicStart() { 
+    executeEngineAction('/api/panic/start', 'Reanudando...', 'Running');
+}
+async function startEngine() { 
+    const result = await Swal.fire({ title: '¿Arrancar Motor?', text: "Iniciará la operativa automática.", icon: 'question', showCancelButton: true, confirmButtonText: 'Arrancar' }); 
+    if (result.isConfirmed) executeEngineAction('/api/engine/on', 'Iniciando Motor...', 'Running'); 
+}
+async function stopEngine() { 
+    const result = await Swal.fire({ title: '¿Detener Motor?', text: "Se detendrá el análisis de mercado.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Detener' }); 
+    if (result.isConfirmed) executeEngineAction('/api/engine/off', 'Deteniendo Motor...', 'Stopped'); 
+}
+// ----------------------------------------------------------
+
 async function panicCancel() { const result = await Swal.fire({ title: '¿CANCELAR TODO?', text: "Se borrarán todas las órdenes del Exchange.", icon: 'error', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, cancelar todo' }); if (result.isConfirmed) postAction('/api/panic/cancel_all'); }
 async function panicSell() { const result = await Swal.fire({ title: '¿VENDER TODO?', text: "PELIGRO: Se venderán todas las posiciones a mercado.", icon: 'error', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, vender todo' }); if (result.isConfirmed) postAction('/api/panic/sell_all'); }
-async function startEngine() { const result = await Swal.fire({ title: '¿Arrancar Motor?', text: "Iniciará la operativa automática.", icon: 'question', showCancelButton: true, confirmButtonText: 'Arrancar' }); if (result.isConfirmed) postAction('/api/engine/on'); }
-async function stopEngine() { const result = await Swal.fire({ title: '¿Detener Motor?', text: "Se detendrá el análisis de mercado.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Detener' }); if (result.isConfirmed) postAction('/api/engine/off'); }
 async function resetGlobalChart() { const result = await Swal.fire({ title: '¿Borrar Gráfica Global?', text: "Se eliminará el historial visual del balance.", icon: 'question', showCancelButton: true, confirmButtonText: 'Borrar' }); if (result.isConfirmed) postAction('/api/reset/chart/global'); }
 async function resetSessionChart() { const result = await Swal.fire({ title: '¿Reiniciar Sesión?', text: "Se reiniciará la gráfica de sesión y el contador de PnL de sesión.", icon: 'question', showCancelButton: true, confirmButtonText: 'Reiniciar' }); if (result.isConfirmed) postAction('/api/reset/chart/session'); }
 async function resetGlobalPnL() { const result = await Swal.fire({ title: '¿Borrar Historial PnL?', text: "Se eliminarán todos los registros de trades pasados.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Borrar' }); if (result.isConfirmed) postAction('/api/reset/pnl/global'); }
@@ -330,6 +396,82 @@ async function resetCoinSession(symbol) { const result = await Swal.fire({ title
 async function resetCoinGlobal(symbol) { const result = await Swal.fire({ title: `¿Borrar Historial ${symbol}?`, text: "Se eliminarán los trades antiguos de esta moneda.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Borrar' }); if (result.isConfirmed) postAction('/api/reset/coin/global', { symbol: symbol }); }
 
 async function postAction(url, body={}, cb=null) { try { const res = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) }); const d = await res.json(); if(res.ok) { if(cb) await cb(); else { dataCache={}; await loadHome(); } Swal.fire({title:'Éxito', text:d.message, icon:'success', timer:1500, showConfirmButton:false}); } else Swal.fire('Error', d.detail, 'error'); } catch(e) { Swal.fire('Error', 'Conexión', 'error'); } }
+
+// --- NUEVA LÓGICA DE ESPERA ACTIVA (POLLING DE ESTADO) ---
+async function executeEngineAction(url, actionTitle, targetStatus) {
+    // 1. Mostrar Loading (Sin botón de cerrar)
+    Swal.fire({
+        title: actionTitle,
+        html: 'Esperando cambio de estado...<br><i class="fa-solid fa-spinner fa-spin fa-2x mt-3"></i>',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false
+    });
+
+    try {
+        // 2. Ejecutar Acción
+        const res = await fetch(url, { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: '{}' 
+        });
+        const d = await res.json();
+
+        if (!res.ok) {
+            Swal.fire('Error', d.detail || 'Error en la petición', 'error');
+            return;
+        }
+
+        // 3. Polling hasta confirmar estado en /api/status
+        let attempts = 0;
+        const maxAttempts = 15; // 15 intentos (aprox 20s)
+        let finished = false; // Bandera para evitar múltiples alertas
+        
+        // Intervalo aumentado de 1.5s a 2.5s para no saturar
+        const checkInterval = setInterval(async () => {
+            if (finished) { clearInterval(checkInterval); return; } // Doble seguridad
+            
+            attempts++;
+            try {
+                // Consultamos estado silenciosamente
+                const sRes = await fetch('/api/status');
+                const sData = await sRes.json();
+                
+                // Si el estado ya coincide con el objetivo (Running/Stopped/Paused)
+                if (sData.status === targetStatus) {
+                    finished = true;
+                    clearInterval(checkInterval);
+                    
+                    // Recargamos la UI completa ahora que sabemos que ha cambiado
+                    await loadHome();
+                    
+                    Swal.fire({
+                        title: 'Operación Finalizada',
+                        text: `El sistema está: ${targetStatus.toUpperCase()}`,
+                        icon: 'success',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                } else if (attempts >= maxAttempts) {
+                    finished = true;
+                    clearInterval(checkInterval);
+                    
+                    // Timeout
+                    Swal.fire({
+                        title: 'Tiempo de espera agotado',
+                        text: 'El estado no se ha actualizado a tiempo, revisa los logs.',
+                        icon: 'warning'
+                    });
+                }
+            } catch(e) {
+                console.error("Polling error", e);
+            }
+        }, 2500); // Check cada 2.5s (más lento para evitar BAN)
+
+    } catch (e) {
+        Swal.fire('Error', 'Error de conexión', 'error');
+    }
+}
 
 function changeTheme(themeName, reloadData = true) {
     const link = document.getElementById('theme-stylesheet');
