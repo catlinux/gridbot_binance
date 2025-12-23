@@ -20,8 +20,8 @@
       "strategy": {
         "grids_quantity": 10,
         "amount_per_grid": 14,
-        "grid_spread": 0.6,
-        "start_mode": "buy_2",
+        "grid_spread": 0.7,
+        "start_mode": "buy_1",
         "strategy_profile": "manual",
         "trailing_enabled": true
       }
@@ -33,7 +33,7 @@
         "grids_quantity": 10,
         "amount_per_grid": 14,
         "grid_spread": 0.8,
-        "start_mode": "buy_2",
+        "start_mode": "buy_1",
         "strategy_profile": "manual",
         "trailing_enabled": true
       }
@@ -81,7 +81,7 @@
         "grids_quantity": 10,
         "amount_per_grid": 14,
         "grid_spread": 1,
-        "start_mode": "buy_2",
+        "start_mode": "buy_1",
         "strategy_profile": "manual",
         "trailing_enabled": true
       }
