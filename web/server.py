@@ -88,6 +88,16 @@ def format_uptime(seconds):
 def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+# --- NOU ENDPOINT: INFO COMPTE ---
+@app.get("/api/account/info")
+def get_account_info_api():
+    """Retorna informació del compte: VIP Tier i Comissions"""
+    if not bot_instance or not bot_instance.connector:
+        return {'tier': 'Offline', 'maker': 0, 'taker': 0}
+    
+    return bot_instance.connector.get_account_status()
+# ---------------------------------
+
 @app.get("/api/status")
 def get_status():
     if not bot_instance: return {"status": "Offline"}
@@ -143,12 +153,12 @@ def get_status():
                         current_total_equity += val
             except: pass
 
-        # 1. Obtenim estadístiques de la SESSIÓ ACTUAL (com sempre)
+        # 1. Obtenim estadístiques de la SESSIÓ ACTUAL
         session_start_ts = bot_instance.global_start_time
         session_stats = db.get_stats(from_timestamp=session_start_ts)
         session_cash_flow = session_stats['per_coin_stats']['cash_flow']
         
-        # 2. Obtenim estadístiques GLOBALS (Històric + Sessió)
+        # 2. Obtenim estadístiques GLOBALS
         global_trades_stats = db.get_stats(from_timestamp=0) 
         
         session_uptime_str = format_uptime(time.time() - session_start_ts) if bot_instance.is_running else "OFF"
@@ -176,11 +186,10 @@ def get_status():
                 qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
                 strat_pnl_session = (qty_delta * curr_price) + cf_session
 
-                # --- CÀLCUL PNL GLOBAL (SISTEMA NOU) ---
-                # Global = Històric (Sessions Tancades) + Sessió Actual (En curs)
+                # --- CÀLCUL PNL GLOBAL (SISTEMA CAIXA REGISTRADORA) ---
                 accumulated_history = db.get_accumulated_pnl(symbol)
                 strat_pnl_global = accumulated_history + strat_pnl_session
-                # ---------------------------------------
+                # -------------------------
 
                 acc_global_pnl += strat_pnl_global
                 acc_session_pnl += strat_pnl_session
@@ -409,11 +418,8 @@ def reset_session_chart_api():
 @app.post("/api/reset/pnl/global")
 def reset_global_pnl_api():
     try:
-        # 1. Borramos historial (Trades y Global Stats System)
         db.clear_all_trades_history()
-        # 2. Esborrem específicament el nou sistema
         db.reset_global_pnl_history()
-        
         return {"status": "success", "message": "Historial de PnL Global reiniciado a 0."}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
@@ -441,9 +447,7 @@ def reset_coin_session_api(req: CoinResetRequest):
 @app.post("/api/reset/coin/global")
 def reset_coin_global_api(req: CoinResetRequest):
     try:
-        # Eliminem trades i l'històric PnL d'aquesta moneda
         db.delete_trades_for_symbol(req.symbol)
-        
         if bot_instance:
              try:
                 base = req.symbol.split('/')[0]
@@ -521,10 +525,9 @@ def get_pair_details(symbol: str, timeframe: str = '15m'):
                 qty_delta = session_stats['per_coin_stats']['qty_delta'].get(symbol, 0.0)
                 pnl_value_session = (qty_delta * current_price) + cf_session
 
-                # --- PnL GLOBAL (SISTEMA NOU) ---
+                # --- PnL GLOBAL ---
                 accumulated_history = db.get_accumulated_pnl(symbol)
                 global_pnl = accumulated_history + pnl_value_session
-                # --------------------------------
 
         return {
             "symbol": symbol,

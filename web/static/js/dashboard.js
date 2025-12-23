@@ -49,6 +49,9 @@ async function init() {
         const savedTheme = localStorage.getItem('gridbot_theme') || 'light';
         changeTheme(savedTheme, false);
 
+        // Forcem neteja de caché antiga de VIP per assegurar que es vegi
+        localStorage.removeItem('gridbot_vip_last_update');
+
         const res = await fetch('/api/status');
         if (!res.ok) return;
         const data = await res.json();
@@ -360,7 +363,72 @@ async function loadSymbol(symbol) {
     } catch(e) { console.error(e); }
 }
 
-async function loadWallet() { const tbody = document.getElementById('wallet-table-body'); tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary"></div></td></tr>'; try { const res = await fetch('/api/wallet'); const data = await res.json(); if(data.length===0) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Sin activos</td></tr>'; return; } tbody.innerHTML = data.map(item => { const freeVal = item.free * item.price; const lockedVal = item.locked * item.price; let btn = (item.asset!=='USDC' && item.asset!=='USDT') ? `<button class="btn btn-sm btn-outline-danger" onclick="liquidateAsset('${item.asset}')">Vender</button>` : '<span class="text-muted small">Base</span>'; return `<tr><td class="fw-bold">${item.asset}</td><td>${fmtCrypto(item.free)} <small class="text-muted">(${fmtUSDC(freeVal)}$)</small></td><td class="${item.locked>0?'text-danger':''}">${fmtCrypto(item.locked)} <small class="text-muted">(${fmtUSDC(lockedVal)}$)</small></td><td>${fmtCrypto(item.total)}</td><td class="fw-bold">${fmtUSDC(item.usdc_value)}$</td><td class="text-end">${btn}</td></tr>`; }).join(''); } catch(e) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error</td></tr>'; } }
+async function loadWallet() { 
+    // --- LÒGICA D'ACTUALITZACIÓ INFO COMPTE ---
+    // Forcem la visibilitat inicial per assegurar que es veu alguna cosa
+    const badgeContainer = document.getElementById('account-info-badge');
+    if(badgeContainer && badgeContainer.classList.contains('d-none')) {
+        badgeContainer.classList.remove('d-none');
+        document.getElementById('acc-tier').innerText = 'Cargando...';
+        document.getElementById('acc-fees').innerText = '...';
+    }
+
+    // Cridem de forma asíncrona (no bloqueja la taula)
+    fetchAccountInfo();
+
+    const tbody = document.getElementById('wallet-table-body'); 
+    if(!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><div class="spinner-border text-primary"></div></td></tr>'; 
+    try { 
+        const res = await fetch('/api/wallet'); 
+        const data = await res.json(); 
+        if(data.length===0) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Sin activos</td></tr>'; return; } 
+        tbody.innerHTML = data.map(item => { 
+            const freeVal = item.free * item.price; 
+            const lockedVal = item.locked * item.price; 
+            let btn = (item.asset!=='USDC' && item.asset!=='USDT') ? `<button class="btn btn-sm btn-outline-danger" onclick="liquidateAsset('${item.asset}')">Vender</button>` : '<span class="text-muted small">Base</span>'; 
+            return `<tr><td class="fw-bold">${item.asset}</td><td>${fmtCrypto(item.free)} <small class="text-muted">(${fmtUSDC(freeVal)}$)</small></td><td class="${item.locked>0?'text-danger':''}">${fmtCrypto(item.locked)} <small class="text-muted">(${fmtUSDC(lockedVal)}$)</small></td><td>${fmtCrypto(item.total)}</td><td class="fw-bold">${fmtUSDC(item.usdc_value)}$</td><td class="text-end">${btn}</td></tr>`; 
+        }).join(''); 
+    } catch(e) { 
+        if(tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error cargando cartera</td></tr>'; 
+    } 
+}
+
+async function fetchAccountInfo() {
+    try {
+        const resInfo = await fetch('/api/account/info');
+        if(resInfo.ok) {
+            const info = await resInfo.json();
+            // Guardem a localStorage (per si un cas)
+            localStorage.setItem('gridbot_vip_info', JSON.stringify(info));
+            localStorage.setItem('gridbot_vip_last_update', Date.now().toString());
+            updateAccountBadge(info);
+        } else {
+            console.warn("API Account Info Error");
+            // Si falla, mostrem N/A però mantenim visible
+            updateAccountBadge({ tier: 'N/A', maker: 0, taker: 0 });
+        }
+    } catch(e) { 
+        console.error("Error loading account info", e);
+        updateAccountBadge({ tier: 'Error', maker: 0, taker: 0 });
+    }
+}
+
+function updateAccountBadge(info) {
+    const tierBadge = document.getElementById('acc-tier');
+    const feesBadge = document.getElementById('acc-fees');
+    const badgeContainer = document.getElementById('account-info-badge');
+    
+    if (tierBadge && feesBadge && info) {
+        tierBadge.innerText = info.tier || 'N/A';
+        const maker = info.maker !== undefined ? info.maker.toFixed(3) : '--';
+        const taker = info.taker !== undefined ? info.taker.toFixed(3) : '--';
+        feesBadge.innerText = `Maker: ${maker}% | Taker: ${taker}%`;
+        badgeContainer.classList.remove('d-none');
+    }
+}
+
 async function loadGlobalOrders() { try { const res = await fetch('/api/orders'); const orders = await res.json(); const tbody = document.getElementById('global-orders-table'); if(orders.length === 0) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No hay órdenes</td></tr>'; return; } orders.sort((a,b) => a.symbol.localeCompare(b.symbol) || b.price - a.price); tbody.innerHTML = orders.map(o => { const isBuy = o.side === 'buy'; let pnlDisplay = '-', pnlClass = ''; if(!isBuy && o.entry_price > 0) { const pnl = ((o.current_price - o.entry_price)/o.entry_price)*100; pnlDisplay = fmtPct(pnl); pnlClass = pnl>=0 ? 'text-success fw-bold':'text-danger fw-bold'; } return `<tr><td class="fw-bold">${o.symbol}</td><td><span class="badge ${isBuy?'bg-success':'bg-danger'}">${isBuy?'COMPRA':'VENTA'}</span></td><td>${fmtPrice(o.price)}</td><td class="text-muted">${isBuy?'-':fmtPrice(o.entry_price)}</td><td>${fmtPrice(o.current_price)}</td><td class="${pnlClass}">${pnlDisplay}</td><td>${fmtUSDC(o.total_value)}</td><td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="closeOrder('${o.symbol}','${o.id}','${o.side}',${o.amount})"><i class="fa-solid fa-times"></i></button></td></tr>`; }).join(''); } catch(e) {} }
 async function loadBalanceCharts() { try { const res = await fetch('/api/history/balance'); if (!res.ok) return; const data = await res.json(); fullGlobalHistory = data.global; renderLineChart('balanceChartSession', data.session, '#0ecb81'); const activeBtn = document.querySelector('.hist-btn.active'); if(activeBtn && activeBtn.innerText === '24h') filterHistory(24); else if(activeBtn && activeBtn.innerText === '7d') filterHistory(168); else renderLineChart('balanceChartGlobal', fullGlobalHistory, '#3b82f6'); } catch(e) { console.error("Error loading charts", e); } }
 async function closeOrder(s, i, side, a) { const result = await Swal.fire({ title: '¿Cancelar Orden?', text: `${side.toUpperCase()} ${s} - Cantidad: ${a}`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', cancelButtonColor: '#3085d6', confirmButtonText: 'Sí, cancelar' }); if (result.isConfirmed) { postAction('/api/close_order', { symbol: s, order_id: i, side: side, amount: a }); } }

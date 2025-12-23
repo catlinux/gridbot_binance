@@ -123,6 +123,58 @@ class BinanceConnector:
             log.error(f"Error API ({context}): {e}")
     # --------------------------------------------
 
+    # --- FUNCIÓ MODIFICADA: ESTAT DEL COMPTE (SOLUCIÓ 0%) ---
+    def get_account_status(self):
+        """Retorna nivell VIP i comissions reals buscant en diversos parells"""
+        if not self.exchange:
+            return {'tier': 'N/A', 'maker': 0, 'taker': 0}
+        
+        info = {'tier': 'VIP 0', 'maker': 0.0, 'taker': 0.0}
+        
+        try:
+            # 1. Intentem obtenir comissions provant diversos parells comuns
+            # Molts parells tenen 0% per promoció, així que busquem el primer que tingui fee > 0
+            test_pairs = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'BTC/USDC']
+            found_fee = False
+            
+            for pair in test_pairs:
+                try:
+                    fees = self.exchange.fetch_trading_fee(pair)
+                    if fees:
+                        maker = fees.get('maker', 0.0)
+                        taker = fees.get('taker', 0.0)
+                        
+                        # Si trobem una comissió > 0, assumim que és la tarifa real del compte
+                        if maker > 0 or taker > 0:
+                            info['maker'] = maker * 100 
+                            info['taker'] = taker * 100
+                            found_fee = True
+                            break
+                        
+                        # Si és 0, guardem el valor provisional però seguim buscant
+                        info['maker'] = maker * 100
+                        info['taker'] = taker * 100
+                except: continue
+            
+            # 2. Obtenim nivell VIP
+            if hasattr(self.exchange, 'sapi_get_account_status'):
+                res = self.exchange.sapi_get_account_status()
+                # La resposta sol ser {'data': 'Normal'} o {'data': '1'}
+                level = res.get('data', 'Normal')
+                if level == 'Normal':
+                    info['tier'] = 'VIP 0'
+                else:
+                    info['tier'] = f"VIP {level}"
+            
+            if self.exchange.sandbox:
+                info['tier'] = 'Testnet'
+
+        except Exception as e:
+            log.error(f"Error obtenint estat del compte: {e}")
+        
+        return info
+    # -------------------------------------------------------
+
     def get_asset_balance(self, asset):
         if not self.exchange: return 0.0
         try:
